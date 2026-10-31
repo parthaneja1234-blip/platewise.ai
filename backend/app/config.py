@@ -1,5 +1,5 @@
 from typing import List, Union
-from pydantic import AnyHttpUrl, field_validator
+from pydantic import AnyHttpUrl, field_validator, ValidationInfo
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,18 +21,18 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     LOG_LEVEL: str = "INFO"
 
-    # Database Settings
+    # Database Settings (Required; no defaults to prevent accidental fallback)
     POSTGRES_USER: str = "platewise"
-    POSTGRES_PASSWORD: str = "change_me_in_env"
+    POSTGRES_PASSWORD: str
     POSTGRES_SERVER: str = "localhost"
     POSTGRES_PORT: int = 5432
     POSTGRES_DB: str = "platewise_db"
-    DATABASE_URL: str = "sqlite:///./platewise_dev.db"
+    DATABASE_URL: str
 
-    # Cryptographic & Authentication Secrets
-    SECRET_KEY: str = "default_dev_secret_key_replace_immediately_32_chars_min"
-    REFRESH_SECRET_KEY: str = "default_dev_refresh_secret_key_replace_immediately"
-    CSRF_SECRET: str = "default_dev_csrf_secret_token_replace_immediately"
+    # Cryptographic & Authentication Secrets (Required; no defaults to prevent insecure fallbacks)
+    SECRET_KEY: str
+    REFRESH_SECRET_KEY: str
+    CSRF_SECRET: str
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -66,5 +66,43 @@ class Settings(BaseSettings):
     OPENWEATHER_API_KEY: Union[str, None] = None
     WEATHER_CACHE_TTL_HOURS: int = 6
 
+    @field_validator("DATABASE_URL")
+    @classmethod
+    def validate_database_url(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("DATABASE_URL must be configured as a non-empty string.")
+        v_stripped = v.strip()
+        v_lower = v_stripped.lower()
+        for placeholder in ("replace_with", "change_me", "default_"):
+            if placeholder in v_lower:
+                raise ValueError(
+                    f"DATABASE_URL contains prohibited placeholder text ('{placeholder}'). "
+                    "Configure a valid database connection string."
+                )
+        return v_stripped
+
+    @field_validator("SECRET_KEY", "REFRESH_SECRET_KEY", "CSRF_SECRET", "POSTGRES_PASSWORD")
+    @classmethod
+    def validate_secrets_strength(cls, v: str, info: ValidationInfo) -> str:
+        field_name = info.field_name or "Secret"
+        if not v or not v.strip():
+            raise ValueError(f"{field_name} must not be empty.")
+
+        v_lower = v.lower()
+        for placeholder in ("replace_with", "change_me", "default_"):
+            if placeholder in v_lower:
+                raise ValueError(
+                    f"{field_name} contains prohibited placeholder or default text ('{placeholder}'). "
+                    "A secure, unique secret must be configured."
+                )
+
+        min_len = 16 if field_name == "POSTGRES_PASSWORD" else 32
+        if len(v) < min_len:
+            raise ValueError(
+                f"{field_name} must be at least {min_len} characters long."
+            )
+        return v
+
 
 settings = Settings()
+

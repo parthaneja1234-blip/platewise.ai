@@ -27,6 +27,133 @@ def test_configuration_loading():
     assert len(settings.CORS_ORIGINS) >= 1
 
 
+def test_database_url_is_required(monkeypatch):
+    """Verify DATABASE_URL is a required setting with no default and fails clearly if missing."""
+    from pydantic import ValidationError
+    from app.config import Settings
+
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(_env_file=None)
+
+    errors = exc_info.value.errors()
+    assert any(err["loc"] == ("DATABASE_URL",) and err["type"] == "missing" for err in errors)
+
+
+def test_database_url_cannot_be_empty(monkeypatch):
+    """Verify DATABASE_URL cannot be empty or whitespace."""
+    from pydantic import ValidationError
+    from app.config import Settings
+
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(_env_file=None, DATABASE_URL="   ")
+
+    assert "DATABASE_URL must be configured as a non-empty string." in str(exc_info.value)
+
+
+def test_database_url_custom_postgres_connection():
+    """Verify DATABASE_URL accepts a postgresql+psycopg connection string."""
+    from app.config import Settings
+
+    custom_url = "postgresql+psycopg://platewise:secure_pass@localhost:5432/platewise_db"
+    cfg = Settings(_env_file=None, DATABASE_URL=custom_url)
+    assert cfg.DATABASE_URL == custom_url
+
+
+VALID_BASE_CONFIG = {
+    "DATABASE_URL": "sqlite:///:memory:",
+    "SECRET_KEY": "valid_secret_key_32_characters_minimum",
+    "REFRESH_SECRET_KEY": "valid_refresh_key_32_characters_minimum",
+    "CSRF_SECRET": "valid_csrf_token_32_characters_minimum",
+    "POSTGRES_PASSWORD": "valid_postgres_password_16_chars",
+}
+
+
+@pytest.mark.parametrize("field", [
+    "SECRET_KEY",
+    "REFRESH_SECRET_KEY",
+    "CSRF_SECRET",
+    "POSTGRES_PASSWORD",
+])
+def test_secret_refuses_to_start_when_missing(monkeypatch, field):
+    """Verify app refuses to start when a required secret setting is missing."""
+    from pydantic import ValidationError
+    from app.config import Settings
+
+    monkeypatch.delenv(field, raising=False)
+    kwargs = dict(VALID_BASE_CONFIG)
+    del kwargs[field]
+
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(_env_file=None, **kwargs)
+
+    errors = exc_info.value.errors()
+    assert any(err["loc"] == (field,) and err["type"] == "missing" for err in errors)
+
+
+@pytest.mark.parametrize("field,short_value,min_len", [
+    ("SECRET_KEY", "too_short_key_under_32", 32),
+    ("REFRESH_SECRET_KEY", "too_short_key_under_32", 32),
+    ("CSRF_SECRET", "too_short_key_under_32", 32),
+    ("POSTGRES_PASSWORD", "short_pass", 16),
+])
+def test_secret_refuses_to_start_when_too_short(monkeypatch, field, short_value, min_len):
+    """Verify app refuses to start when a secret is shorter than minimum required length."""
+    from pydantic import ValidationError
+    from app.config import Settings
+
+    monkeypatch.delenv(field, raising=False)
+    kwargs = dict(VALID_BASE_CONFIG)
+    kwargs[field] = short_value
+
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(_env_file=None, **kwargs)
+
+    err_str = str(exc_info.value)
+    assert field in err_str
+    assert f"at least {min_len} characters long" in err_str
+
+
+@pytest.mark.parametrize("field", [
+    "SECRET_KEY",
+    "REFRESH_SECRET_KEY",
+    "CSRF_SECRET",
+    "POSTGRES_PASSWORD",
+])
+@pytest.mark.parametrize("placeholder", [
+    "replace_with",
+    "change_me",
+    "default_",
+])
+def test_secret_refuses_to_start_when_placeholder(monkeypatch, field, placeholder):
+    """Verify app refuses to start when a secret contains prohibited placeholder text."""
+    from pydantic import ValidationError
+    from app.config import Settings
+
+    monkeypatch.delenv(field, raising=False)
+    kwargs = dict(VALID_BASE_CONFIG)
+    kwargs[field] = f"{placeholder}_insecure_value_long_enough_32_chars"
+
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(_env_file=None, **kwargs)
+
+    err_str = str(exc_info.value)
+    assert field in err_str
+    assert "prohibited placeholder or default text" in err_str
+
+
+def test_valid_secrets_configuration_starts_successfully():
+    """Verify app starts successfully when all secrets meet security requirements."""
+    from app.config import Settings
+
+    cfg = Settings(_env_file=None, **VALID_BASE_CONFIG)
+    assert cfg.SECRET_KEY == VALID_BASE_CONFIG["SECRET_KEY"]
+    assert cfg.REFRESH_SECRET_KEY == VALID_BASE_CONFIG["REFRESH_SECRET_KEY"]
+    assert cfg.CSRF_SECRET == VALID_BASE_CONFIG["CSRF_SECRET"]
+    assert cfg.POSTGRES_PASSWORD == VALID_BASE_CONFIG["POSTGRES_PASSWORD"]
+
+
 def test_cafeteria_and_dish_models(db_session):
     """Verify cafeteria creation, dish association, and default calculations."""
     cafeteria = Cafeteria(
