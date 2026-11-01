@@ -76,3 +76,30 @@ def test_strict_cors_unauthorized_origin_rejected(client):
     )
     # The header should NOT match the unauthorized origin
     assert resp.headers.get("Access-Control-Allow-Origin") != "http://malicious-website.com"
+
+
+def test_csp_relaxed_for_docs_in_non_production(client, monkeypatch):
+    """
+    Security Review Item 4: In non-production, relax CSP only for /docs, /redoc, /openapi.json
+    so Swagger UI and ReDoc can load scripts/styles from CDN.
+    """
+    monkeypatch.setattr(settings, "ENVIRONMENT", "development")
+    for doc_path in ("/docs", "/redoc", "/openapi.json"):
+        resp = client.get(doc_path)
+        assert resp.status_code == 200
+        csp = resp.headers.get("Content-Security-Policy")
+        assert csp is not None
+        assert "https://cdn.jsdelivr.net" in csp
+
+
+def test_csp_strict_for_all_endpoints_including_docs_in_production(client, monkeypatch):
+    """
+    Security Review Item 4: In production, enforce strict CSP unconditionally
+    without CDN relaxations, even on /docs.
+    """
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    resp = client.get("/docs")
+    csp = resp.headers.get("Content-Security-Policy")
+    assert csp is not None
+    assert "https://cdn.jsdelivr.net" not in csp
+

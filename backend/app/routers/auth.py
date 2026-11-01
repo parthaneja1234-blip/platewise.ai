@@ -63,78 +63,189 @@ class RefreshResponse(BaseModel):
     csrf_token: str
 
 
-# ----- Rate Limiting State -----
-# In-memory counters for per-IP and per-email rate limiting and lockout.
-# Counters stored in-process memory (dictionary).
-# In production multi-worker deployments, this should be backed by Redis or a shared store.
-_ip_login_attempts: dict[str, list[datetime]] = {}
-_email_login_attempts: dict[str, dict] = {}
+# ----- Rate Limiting & Lockout State -----
+MAX_CACHE_ENTRIES = 10000
+
+# _ip_failed_attempts: IP -> list of failed attempt datetimes
+_ip_failed_attempts: dict[str, list[datetime]] = {}
+_ip_login_attempts = _ip_failed_attempts  # Backward compatibility alias for tests
+
+# _lockout_attempts: (email, ip) -> {"failed_attempts": int, "locked_until": Optional[datetime]}
+_lockout_attempts: dict[tuple[str, str], dict] = {}
 
 
 def reset_rate_limits() -> None:
-    """Clear in-memory IP and email rate limit counters (for testing and maintenance)."""
-    _ip_login_attempts.clear()
-    _email_login_attempts.clear()
+    """Clear in-memory IP and lockout counters (for testing and maintenance)."""
+    _ip_failed_attempts.clear()
+    _lockout_attempts.clear()
+
+
+def parse_rate_limit(rate_str: str) -> tuple[int, timedelta]:
+    """Parse rate limit string like '5/15minutes' or '100/minute' into (limit, timedelta)."""
+    parts = rate_str.strip().split("/")
+    limit = int(parts[0])
+    window_str = parts[1].lower() if len(parts) > 1 else "15minutes"
+    if "minute" in window_str:
+        num = "".join(c for c in window_str if c.isdigit())
+        minutes = int(num) if num else 1
+        window = timedelta(minutes=minutes)
+    elif "hour" in window_str:
+        num = "".join(c for c in window_str if c.isdigit())
+        hours = int(num) if num else 1
+        window = timedelta(hours=hours)
+    elif "second" in window_str:
+        num = "".join(c for c in window_str if c.isdigit())
+        secs = int(num) if num else 1
+        window = timedelta(seconds=secs)
+    else:
+        window = timedelta(minutes=15)
+    return limit, window
+
+
+def _prune_caches() -> None:
+    """Cap cache sizes and prune expired entries to prevent memory exhaustion."""
+    now = datetime.now(timezone.utc)
+    _, window = parse_rate_limit(settings.RATE_LIMIT_LOGIN)
+    cutoff = now - window
+
+    # Prune expired IP attempts
+    expired_ips = []
+    for ip, timestamps in _ip_failed_attempts.items():
+        valid = [t for t in timestamps if (t.replace(tzinfo=timezone.utc) if t.tzinfo is None else t) > cutoff]
+        if valid:
+            _ip_failed_attempts[ip] = valid
+        else:
+            expired_ips.append(ip)
+    for ip in expired_ips:
+        _ip_failed_attempts.pop(ip, None)
+
+    # Prune expired lockout attempts
+    expired_keys = []
+    for key, record in _lockout_attempts.items():
+        locked_until = record.get("locked_until")
+        if locked_until and _is_past(locked_until):
+            expired_keys.append(key)
+    for key in expired_keys:
+        _lockout_attempts.pop(key, None)
+
+    # Enforce capacity cap
+    if len(_ip_failed_attempts) > MAX_CACHE_ENTRIES:
+        excess = len(_ip_failed_attempts) - MAX_CACHE_ENTRIES
+        for k in list(_ip_failed_attempts.keys())[:excess]:
+            _ip_failed_attempts.pop(k, None)
+
+    if len(_lockout_attempts) > MAX_CACHE_ENTRIES:
+        excess = len(_lockout_attempts) - MAX_CACHE_ENTRIES
+        for k in list(_lockout_attempts.keys())[:excess]:
+            _lockout_attempts.pop(k, None)
 
 
 def _check_ip_rate_limit(ip: str) -> None:
     """
-    Per-IP rate limiting for login endpoint.
-    Counters stored in-process memory.
+    Check if client IP has exceeded the allowed failed login attempts.
+    Only failed attempts are counted (Item 2). Does NOT record an attempt here.
     """
     now = datetime.now(timezone.utc)
-    window = timedelta(minutes=15)
+    _, window = parse_rate_limit(settings.RATE_LIMIT_LOGIN)
     cutoff = now - window
 
-    if ip not in _ip_login_attempts:
-        _ip_login_attempts[ip] = []
+    timestamps = _ip_failed_attempts.get(ip, [])
+    valid_timestamps = [t for t in timestamps if (t.replace(tzinfo=timezone.utc) if t.tzinfo is None else t) > cutoff]
+    _ip_failed_attempts[ip] = valid_timestamps
 
-    # Prune old attempts outside the window
-    _ip_login_attempts[ip] = [t for t in _ip_login_attempts[ip] if t > cutoff]
-
-    max_attempts = settings.ACCOUNT_LOCKOUT_ATTEMPTS
-    if len(_ip_login_attempts[ip]) >= max_attempts:
+    per_ip_limit = settings.RATE_LIMIT_LOGIN_PER_IP
+    if len(valid_timestamps) >= per_ip_limit:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many login attempts. Please try again later.",
         )
 
-    _ip_login_attempts[ip].append(now)
+
+def _record_ip_failure(ip: str) -> None:
+    """Record a failed login attempt for the client IP."""
+    now = datetime.now(timezone.utc)
+    if ip not in _ip_failed_attempts:
+        _ip_failed_attempts[ip] = []
+    _ip_failed_attempts[ip].append(now)
+    _prune_caches()
 
 
-def _get_email_lockout(email: str) -> tuple[int, Optional[datetime]]:
-    """Return (failed_attempts, locked_until) for an email."""
-    record = _email_login_attempts.get(email)
+def _get_lockout(email: str, ip: str) -> tuple[int, Optional[datetime]]:
+    """Return (failed_attempts, locked_until) for an (email, ip) pair.
+    Resets failed counters when a lock has expired (Item 3)."""
+    key = (email, ip)
+    record = _lockout_attempts.get(key)
     if not record:
         return 0, None
-    return record.get("failed_attempts", 0), record.get("locked_until")
+
+    locked_until = record.get("locked_until")
+    if locked_until:
+        if _is_past(locked_until):
+            # Lock has expired: reset failed counter
+            record["failed_attempts"] = 0
+            record["locked_until"] = None
+            return 0, None
+        return record.get("failed_attempts", 0), locked_until
+
+    return record.get("failed_attempts", 0), None
 
 
-def _record_email_failure(email: str) -> tuple[int, Optional[datetime]]:
-    """Increment failed attempts for an email and calculate lockout window if threshold met."""
+def _record_lockout_failure(email: str, ip: str) -> tuple[int, Optional[datetime]]:
+    """Record a failed attempt for (email, ip). If threshold met, lock the pair."""
     now = datetime.now(timezone.utc)
-    if email not in _email_login_attempts:
-        _email_login_attempts[email] = {
+    key = (email, ip)
+    if key not in _lockout_attempts:
+        _lockout_attempts[key] = {
             "failed_attempts": 0,
             "locked_until": None,
         }
-    record = _email_login_attempts[email]
+    record = _lockout_attempts[key]
+
+    # If previous lock expired, reset
+    if record.get("locked_until") and _is_past(record["locked_until"]):
+        record["failed_attempts"] = 0
+        record["locked_until"] = None
+
     record["failed_attempts"] += 1
-    if record["failed_attempts"] >= settings.ACCOUNT_LOCKOUT_ATTEMPTS:
+    per_email_limit, _ = parse_rate_limit(settings.RATE_LIMIT_LOGIN)
+    lockout_threshold = min(settings.ACCOUNT_LOCKOUT_ATTEMPTS, per_email_limit)
+    if record["failed_attempts"] >= lockout_threshold:
         record["locked_until"] = now + timedelta(minutes=settings.ACCOUNT_LOCKOUT_MINUTES)
+
+    _prune_caches()
     return record["failed_attempts"], record["locked_until"]
 
 
-def _reset_email_lockout(email: str) -> None:
-    _email_login_attempts.pop(email, None)
+def _reset_lockout(email: str, ip: str) -> None:
+    _lockout_attempts.pop((email, ip), None)
+
+
+def reset_lockout_for_email(email: str) -> None:
+    """Clear all lockout entries for an email across all IPs (for unlock_user CLI)."""
+    email_clean = email.strip().lower()
+    keys_to_del = [k for k in _lockout_attempts.keys() if k[0] == email_clean]
+    for k in keys_to_del:
+        _lockout_attempts.pop(k, None)
 
 
 def _apply_progressive_delay(attempts: int) -> None:
-    """Apply progressive delay proportional to attempts to deter brute-force attacks."""
-    delay = min(0.02 * attempts, 0.3)
+    """Apply progressive escalating delay proportional to failed attempts."""
+    delay = min(0.01 * (attempts ** 1.3), 0.3)
     if delay > 0:
         import time
         time.sleep(delay)
+
+
+def _verify_origin_allowed(request: Request) -> None:
+    """Reject requests whose Origin header is present and not in the CORS allow-list (Item 5)."""
+    origin = request.headers.get("origin")
+    if origin:
+        allowed = settings.CORS_ORIGINS if isinstance(settings.CORS_ORIGINS, list) else [settings.CORS_ORIGINS]
+        if origin not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Origin not allowed",
+            )
 
 
 def _is_future(dt: Optional[datetime]) -> bool:
@@ -201,30 +312,45 @@ def login(
     Authenticate user with email + password.
     - Generic error message for all failure cases (unknown email, wrong password, locked account).
     - Timing-safe: runs Argon2id verification even when user doesn't exist.
-    - Tracks lockout state per email regardless of whether the account exists (amendment #4).
-    - Per-IP rate limiting and progressive delay.
+    - Lockout tracked per (email + IP) pair with escalating delay so third parties cannot lock users out (Items 2 & 3).
+    - Only failed attempts count toward per-IP rate limit.
+    - Atomically increments failed_login_attempts in SQL.
     """
     client_ip = get_client_ip(request)
     user_agent = _get_user_agent(request)
 
-    # Per-IP rate limit check
+    # Check per-IP rate limit (only counts failed attempts)
     _check_ip_rate_limit(client_ip)
 
     generic_error = "Invalid email or password"
     email_clean = body.email.strip().lower()
 
-    # Check email lockout state (regardless of whether user exists)
-    email_attempts, email_locked_until = _get_email_lockout(email_clean)
-    now = datetime.now(timezone.utc)
-    is_email_locked = _is_future(email_locked_until)
+    # Check (email + IP) lockout state
+    pair_attempts, pair_locked_until = _get_lockout(email_clean, client_ip)
+    is_pair_locked = _is_future(pair_locked_until)
 
     # Look up user in DB with cafeterias preloaded
     user = db.query(User).options(joinedload(User.cafeterias)).filter(User.email == email_clean).first()
+
+    # Reset expired DB lock if applicable
+    if user and user.locked_until and _is_past(user.locked_until):
+        user.failed_login_attempts = 0
+        user.locked_until = None
+        db.flush()
+
     is_db_locked = bool(user and _is_future(user.locked_until))
 
-    if is_email_locked or is_db_locked:
-        # Account is locked: apply progressive delay and run dummy hash for timing safety
-        _apply_progressive_delay(max(email_attempts, getattr(user, "failed_login_attempts", 0)))
+    if is_pair_locked or is_db_locked:
+        # Locked: record failure, apply progressive delay and run dummy hash for timing safety
+        _record_ip_failure(client_ip)
+        _record_lockout_failure(email_clean, client_ip)
+        if user:
+            db.execute(
+                update(User)
+                .where(User.id == user.id)
+                .values(failed_login_attempts=User.failed_login_attempts + 1)
+            )
+        _apply_progressive_delay(max(pair_attempts + 1, getattr(user, "failed_login_attempts", 0)))
         verify_password("dummy_password_attempt", DUMMY_HASH)
         write_audit_log(
             db, "LOGIN_FAILURE",
@@ -240,8 +366,9 @@ def login(
         )
 
     if user is None:
-        # Non-existent user: track failure per email, apply progressive delay, run dummy hash
-        new_attempts, _ = _record_email_failure(email_clean)
+        # Non-existent user: track failure per (email, IP), apply progressive delay, run dummy hash
+        _record_ip_failure(client_ip)
+        new_attempts, _ = _record_lockout_failure(email_clean, client_ip)
         _apply_progressive_delay(new_attempts)
         verify_password("dummy_password_attempt", DUMMY_HASH)
         write_audit_log(
@@ -258,18 +385,26 @@ def login(
 
     # User exists: verify password
     if not verify_password(body.password, user.hashed_password):
-        user.failed_login_attempts += 1
-        new_attempts, _ = _record_email_failure(email_clean)
-        _apply_progressive_delay(user.failed_login_attempts)
+        _record_ip_failure(client_ip)
+        new_attempts, new_locked_until = _record_lockout_failure(email_clean, client_ip)
 
-        if user.failed_login_attempts >= settings.ACCOUNT_LOCKOUT_ATTEMPTS:
-            user.locked_until = now + timedelta(minutes=settings.ACCOUNT_LOCKOUT_MINUTES)
+        # Atomically increment failed_login_attempts in SQL (Item 3)
+        db.execute(
+            update(User)
+            .where(User.id == user.id)
+            .values(failed_login_attempts=User.failed_login_attempts + 1)
+        )
+        db.flush()
+        db.refresh(user, attribute_names=["failed_login_attempts"])
+        _apply_progressive_delay(new_attempts)
+
+        if new_locked_until is not None:
             write_audit_log(
                 db, "ACCOUNT_LOCKED",
                 user_id=user.id,
                 ip_address=client_ip,
                 user_agent=user_agent,
-                details={"failed_attempts": user.failed_login_attempts},
+                details={"failed_attempts": user.failed_login_attempts, "locked_ip": client_ip},
             )
         else:
             write_audit_log(
@@ -288,6 +423,8 @@ def login(
 
     # Check account is active
     if not user.is_active:
+        _record_ip_failure(client_ip)
+        _record_lockout_failure(email_clean, client_ip)
         _apply_progressive_delay(1)
         verify_password("dummy_password_attempt", DUMMY_HASH)
         write_audit_log(
@@ -303,10 +440,10 @@ def login(
             detail=generic_error,
         )
 
-    # Success: reset lockout counters
+    # Success: reset lockout counters (successful logins do NOT count against rate limits)
     user.failed_login_attempts = 0
     user.locked_until = None
-    _reset_email_lockout(email_clean)
+    _reset_lockout(email_clean, client_ip)
     db.flush()
 
     # Load cafeteria assignments
@@ -364,12 +501,16 @@ def refresh_token(
 ):
     """
     Rotate the refresh token.
+    - Validates Origin header against CORS allow-list (Item 5).
     - Validates the refresh JWT signature and type.
     - Looks up the token hash in the database.
-    - Performs atomic rotation with conditional UPDATE / row lock (amendment #6).
-    - If the token has already been used or is revoked, revokes the entire family (theft detection).
+    - Performs atomic rotation with conditional UPDATE / row lock.
+    - 10-second grace window: allows a recently replaced token to return 401 without revoking family (Item 6).
+    - If reuse occurs after 10-second grace window, revokes the entire family and logs alert.
     - Issues a new access token + refresh token + CSRF token.
     """
+    _verify_origin_allowed(request)
+
     client_ip = get_client_ip(request)
     user_agent = _get_user_agent(request)
 
@@ -409,9 +550,9 @@ def refresh_token(
             detail="Invalid refresh token",
         )
 
-    # Check for reuse (already replaced or revoked)
-    if token_record.is_revoked or token_record.replaced_by is not None:
-        # THEFT DETECTED: revoke entire token family
+    # Check for reuse / revocation
+    if token_record.is_revoked:
+        # Token family already revoked: theft detection
         db.execute(
             update(RefreshToken)
             .where(RefreshToken.family_id == token_record.family_id)
@@ -422,7 +563,42 @@ def refresh_token(
             user_id=user_id,
             ip_address=client_ip,
             user_agent=user_agent,
-            details={"family_id": family_id, "reused_token_id": token_record.id},
+            details={"family_id": family_id, "reused_token_id": token_record.id, "reason": "already_revoked"},
+        )
+        db.commit()
+        clear_auth_cookies(response)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token reuse detected",
+        )
+
+    if token_record.replaced_by is not None:
+        # Token has already been rotated. Check 10-second grace window (Item 6).
+        replacement = db.query(RefreshToken).filter(RefreshToken.id == token_record.replaced_by).first()
+        if replacement:
+            rep_created = replacement.created_at
+            if rep_created.tzinfo is None:
+                rep_created = rep_created.replace(tzinfo=timezone.utc)
+            age = (datetime.now(timezone.utc) - rep_created).total_seconds()
+            if age <= 10.0:
+                # Within 10-second grace period: return 401 WITHOUT revoking the family!
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token already rotated within grace period",
+                )
+
+        # After grace window has expired: theft detected, revoke entire family!
+        db.execute(
+            update(RefreshToken)
+            .where(RefreshToken.family_id == token_record.family_id)
+            .values(is_revoked=True)
+        )
+        write_audit_log(
+            db, "SECURITY_ALERT_TOKEN_REUSE",
+            user_id=user_id,
+            ip_address=client_ip,
+            user_agent=user_agent,
+            details={"family_id": family_id, "reused_token_id": token_record.id, "reason": "grace_window_expired"},
         )
         db.commit()
         clear_auth_cookies(response)
@@ -472,8 +648,7 @@ def refresh_token(
     db.add(new_refresh_record)
     db.flush()
 
-    # Atomic conditional update to mark old token as replaced (amendment #6)
-    # If two concurrent requests reach this point, only one can succeed in setting replaced_by
+    # Atomic conditional update to mark old token as replaced
     rows_updated = db.execute(
         update(RefreshToken)
         .where(
@@ -487,7 +662,22 @@ def refresh_token(
     if rows_updated == 0:
         # Race condition / concurrent use detected!
         db.rollback()
-        # Revoke entire token family
+        # Check if the token was rotated within 10-second grace window
+        refreshed_rec = db.query(RefreshToken).filter(RefreshToken.id == token_record.id).first()
+        if refreshed_rec and refreshed_rec.replaced_by and not refreshed_rec.is_revoked:
+            replacement = db.query(RefreshToken).filter(RefreshToken.id == refreshed_rec.replaced_by).first()
+            if replacement:
+                rep_created = replacement.created_at
+                if rep_created.tzinfo is None:
+                    rep_created = rep_created.replace(tzinfo=timezone.utc)
+                age = (datetime.now(timezone.utc) - rep_created).total_seconds()
+                if age <= 10.0:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Token already rotated within grace period",
+                    )
+
+        # Otherwise revoke entire token family
         db.execute(
             update(RefreshToken)
             .where(RefreshToken.family_id == family_id)
@@ -534,8 +724,11 @@ def logout(
 ):
     """
     Server-side logout: revokes the entire refresh token family.
-    Works from the refresh cookie alone — an expired access token does not block logout (amendment #3).
+    - Validates Origin header against CORS allow-list (Item 5).
+    - Works from the refresh cookie alone — an expired access token does not block logout.
     """
+    _verify_origin_allowed(request)
+
     client_ip = get_client_ip(request)
     user_agent = _get_user_agent(request)
 

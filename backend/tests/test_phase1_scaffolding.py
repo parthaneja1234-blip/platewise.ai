@@ -19,7 +19,8 @@ from app.models import (
 def test_configuration_loading():
     """Verify Pydantic v2 settings are correctly parsed and loaded."""
     assert settings.PROJECT_NAME == "PlateWise AI"
-    assert settings.JWT_ALGORITHM == "HS256"
+    from app.security.jwt import JWT_ALGORITHM
+    assert JWT_ALGORITHM == "HS256"
     assert settings.ACCESS_TOKEN_EXPIRE_MINUTES > 0
     assert settings.DEFAULT_COST_PER_KG_INR == 45.0
     assert settings.DEFAULT_EMISSION_FACTOR_CO2E == 2.5

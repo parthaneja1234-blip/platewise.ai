@@ -88,18 +88,53 @@ def test_refresh_token_rotates_on_every_use(client, db_session, test_user):
     assert old_rec.family_id == new_rec.family_id
 
 
-def test_refresh_token_reuse_revokes_entire_family(client, db_session, test_user):
-    """Submitting an already-used refresh token triggers theft detection and revokes the family."""
+def test_refresh_token_grace_window_prevents_family_revocation(client, db_session, test_user):
+    """
+    Security Review Item 6: A token rotated within the last 10 seconds returns 401
+    WITHOUT revoking the token family. The new replacement token remains valid.
+    """
     _login_and_get_cookies(client)
     token_1 = client.cookies.get("refresh_token")
 
-    # Legitimate rotation 1 -> 2
+    # Rotation 1: token_1 -> token_2
     resp1 = client.post("/api/v1/auth/refresh")
     assert resp1.status_code == 200
     token_2 = client.cookies.get("refresh_token")
     assert token_2 != token_1
 
-    # Attacker reuses token_1
+    # Raced/duplicate request reuses token_1 within the 10-second grace window
+    client.cookies.set("refresh_token", token_1)
+    reuse_resp = client.post("/api/v1/auth/refresh")
+    assert reuse_resp.status_code == 401
+    assert "grace period" in reuse_resp.json()["detail"].lower()
+
+    # Family is NOT revoked: token_2 is still valid!
+    client.cookies.set("refresh_token", token_2)
+    resp2 = client.post("/api/v1/auth/refresh")
+    assert resp2.status_code == 200
+
+
+def test_refresh_token_reuse_after_grace_window_revokes_entire_family(client, db_session, test_user):
+    """
+    Security Review Item 6: Submitting an already-used refresh token AFTER the 10-second
+    grace window triggers theft detection, revokes the entire family, and writes an alert.
+    """
+    _login_and_get_cookies(client)
+    token_1 = client.cookies.get("refresh_token")
+
+    # Rotation 1: token_1 -> token_2
+    resp1 = client.post("/api/v1/auth/refresh")
+    assert resp1.status_code == 200
+    token_2 = client.cookies.get("refresh_token")
+
+    # Simulate expiration of the 10-second grace window by backdating replacement.created_at
+    token_2_hash = hashlib.sha256(token_2.encode("utf-8")).hexdigest()
+    rec_2 = db_session.query(RefreshToken).filter(RefreshToken.token_hash == token_2_hash).first()
+    assert rec_2 is not None
+    rec_2.created_at = datetime.now(timezone.utc) - timedelta(seconds=15)
+    db_session.commit()
+
+    # Attacker reuses token_1 after grace window has expired
     client.cookies.set("refresh_token", token_1)
     reuse_resp = client.post("/api/v1/auth/refresh")
     assert reuse_resp.status_code == 401
@@ -111,19 +146,7 @@ def test_refresh_token_reuse_revokes_entire_family(client, db_session, test_user
     for tok in tokens_in_db:
         assert tok.is_revoked is True
 
-
-def test_refresh_token_reuse_logs_critical_security_alert(client, db_session, test_user):
-    """Reuse attempt creates a SECURITY_ALERT_TOKEN_REUSE audit record."""
-    _login_and_get_cookies(client)
-    old_token = client.cookies.get("refresh_token")
-
-    # Rotate
-    client.post("/api/v1/auth/refresh")
-
-    # Reuse old token
-    client.cookies.set("refresh_token", old_token)
-    client.post("/api/v1/auth/refresh")
-
+    # Critical security alert logged
     alert_log = db_session.query(AuditLog).filter(
         AuditLog.user_id == test_user.id,
         AuditLog.action == "SECURITY_ALERT_TOKEN_REUSE",
@@ -141,7 +164,13 @@ def test_subsequent_token_in_revoked_family_fails(client, db_session, test_user)
     client.post("/api/v1/auth/refresh")
     token_2 = client.cookies.get("refresh_token")
 
-    # Thief reuses token 1 -> revokes family
+    # Backdate replacement record past grace window
+    token_2_hash = hashlib.sha256(token_2.encode("utf-8")).hexdigest()
+    rec_2 = db_session.query(RefreshToken).filter(RefreshToken.token_hash == token_2_hash).first()
+    rec_2.created_at = datetime.now(timezone.utc) - timedelta(seconds=15)
+    db_session.commit()
+
+    # Thief reuses token 1 after grace window -> revokes family
     client.cookies.set("refresh_token", token_1)
     client.post("/api/v1/auth/refresh")
 
@@ -202,9 +231,9 @@ def test_logged_out_refresh_token_cannot_be_used(client, db_session, test_user):
 
 def test_atomic_concurrent_refresh_rotation_prevents_double_rotation(client, db_session, test_user):
     """
-    Amendment 6: Refresh rotation must be atomic.
+    Amendment 6 & Item 6: Refresh rotation must be atomic.
     Simulating two concurrent requests presenting the same token:
-    The first rotates the token; the second MUST fail with token reuse detection.
+    The first rotates the token; the second is rejected safely under the grace window.
     """
     _login_and_get_cookies(client)
     token = client.cookies.get("refresh_token")
@@ -218,4 +247,55 @@ def test_atomic_concurrent_refresh_rotation_prevents_double_rotation(client, db_
     client.cookies.set("refresh_token", token)
     resp2 = client.post("/api/v1/auth/refresh")
     assert resp2.status_code == 401
-    assert "Token reuse detected" in resp2.json()["detail"]
+    assert "grace period" in resp2.json()["detail"].lower()
+
+
+def test_refresh_token_origin_validation(client, test_user):
+    """
+    Security Review Item 5: Reject /auth/refresh if Origin header is present
+    and not in the CORS allow-list.
+    """
+    _login_and_get_cookies(client)
+
+    # 1. Disallowed origin -> 403 Forbidden
+    resp_disallowed = client.post(
+        "/api/v1/auth/refresh",
+        headers={"Origin": "https://malicious-site.com"},
+    )
+    assert resp_disallowed.status_code == 403
+    assert resp_disallowed.json()["detail"] == "Origin not allowed"
+
+    # 2. Allowed origin -> 200 OK
+    resp_allowed = client.post(
+        "/api/v1/auth/refresh",
+        headers={"Origin": "http://localhost:3000"},
+    )
+    assert resp_allowed.status_code == 200
+
+    # 3. No Origin header (e.g. non-browser client) -> 200 OK
+    resp_no_origin = client.post("/api/v1/auth/refresh")
+    assert resp_no_origin.status_code == 200
+
+
+def test_logout_origin_validation(client, test_user):
+    """
+    Security Review Item 5: Reject /auth/logout if Origin header is present
+    and not in the CORS allow-list.
+    """
+    _login_and_get_cookies(client)
+
+    # 1. Disallowed origin -> 403 Forbidden
+    resp_disallowed = client.post(
+        "/api/v1/auth/logout",
+        headers={"Origin": "https://malicious-site.com"},
+    )
+    assert resp_disallowed.status_code == 403
+    assert resp_disallowed.json()["detail"] == "Origin not allowed"
+
+    # 2. Allowed origin -> 200 OK
+    resp_allowed = client.post(
+        "/api/v1/auth/logout",
+        headers={"Origin": "http://localhost:3000"},
+    )
+    assert resp_allowed.status_code == 200
+

@@ -49,3 +49,7 @@ htmlcov/
 *.db
 pgdata/
 uploads/
+
+# Asset sources (raw 3D models & textures)
+assets-src/
+frontend/assets-src/

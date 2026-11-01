@@ -33,7 +33,6 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     REFRESH_SECRET_KEY: str
     CSRF_SECRET: str
-    JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
@@ -49,11 +48,16 @@ class Settings(BaseSettings):
     @classmethod
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
         if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
-        return v
+            origins = [origin.strip() for origin in v.split(",") if origin.strip()]
+        else:
+            origins = list(v)
+        if any(origin == "*" for origin in origins):
+            raise ValueError("CORS_ORIGINS must not contain wildcard '*' when allow_credentials=True.")
+        return origins
 
     # Rate Limiting & Account Lockout
     RATE_LIMIT_LOGIN: str = "5/15minutes"
+    RATE_LIMIT_LOGIN_PER_IP: int = 50  # Per-IP limit significantly higher for shared campus NAT
     RATE_LIMIT_GLOBAL: str = "100/minute"
     ACCOUNT_LOCKOUT_ATTEMPTS: int = 5
     ACCOUNT_LOCKOUT_MINUTES: int = 15
@@ -117,8 +121,21 @@ class Settings(BaseSettings):
         return v
 
     @model_validator(mode="after")
-    def validate_production_cookie_secure(self) -> "Settings":
-        """Abort startup if COOKIE_SECURE=False in production to prevent cookie exposure over HTTP."""
+    def validate_security_invariants(self) -> "Settings":
+        """Enforce cryptographic and configuration security invariants."""
+        # 1. SECRET_KEY, REFRESH_SECRET_KEY, CSRF_SECRET must all differ
+        if len({self.SECRET_KEY, self.REFRESH_SECRET_KEY, self.CSRF_SECRET}) < 3:
+            raise ValueError(
+                "SECRET_KEY, REFRESH_SECRET_KEY, and CSRF_SECRET must all be distinct and unique."
+            )
+
+        # 2. COOKIE_SAMESITE="none" requires COOKIE_SECURE=True
+        if self.COOKIE_SAMESITE.lower() == "none" and not self.COOKIE_SECURE:
+            raise ValueError(
+                "COOKIE_SAMESITE='none' requires COOKIE_SECURE=True to prevent browser rejection."
+            )
+
+        # 3. Abort startup if COOKIE_SECURE=False in production to prevent cookie exposure over HTTP
         if self.ENVIRONMENT == "production" and not self.COOKIE_SECURE:
             raise ValueError(
                 "COOKIE_SECURE must be True when ENVIRONMENT is 'production'. "

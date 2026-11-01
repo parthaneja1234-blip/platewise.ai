@@ -10,23 +10,26 @@ from sqlalchemy.orm import Session
 from app.models.audit_log import AuditLog
 
 
-# Patterns and keys to redact from audit log details
-_SENSITIVE_KEYS = {
-    "password", "hashed_password", "plain_password", "new_password",
-    "old_password", "token", "access_token", "refresh_token",
-    "csrf_token", "secret_key", "csrf_secret", "refresh_secret_key",
-    "token_hash", "secret",
-}
+# Sensitive substrings to redact case-insensitively from audit log keys
+_SENSITIVE_SUBSTRINGS = ("password", "token", "secret", "authorization", "cookie")
 
 # Regex to detect JWT-like strings (xxx.yyy.zzz)
 _JWT_PATTERN = re.compile(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*")
 
 
+def _is_sensitive_key(key: str) -> bool:
+    """Return True if key contains any sensitive substring, case-insensitively."""
+    key_lower = str(key).lower()
+    return any(sub in key_lower for sub in _SENSITIVE_SUBSTRINGS)
+
+
 def _sanitize_value(value: Any) -> Any:
     """Recursively sanitize sensitive values from audit log details."""
     if isinstance(value, dict):
-        return {k: _sanitize_value(v) if k.lower() not in _SENSITIVE_KEYS else "[REDACTED]"
-                for k, v in value.items()}
+        return {
+            k: "[REDACTED]" if _is_sensitive_key(k) else _sanitize_value(v)
+            for k, v in value.items()
+        }
     if isinstance(value, list):
         return [_sanitize_value(item) for item in value]
     if isinstance(value, str):

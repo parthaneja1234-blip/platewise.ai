@@ -8,6 +8,7 @@ Key design decisions (per amendments):
 - verify_csrf enforces double-submit cookie validation on all mutating requests.
 - get_client_ip does NOT trust X-Forwarded-For unless the direct peer is in TRUSTED_PROXIES.
 """
+import hmac
 from typing import Optional
 
 import jwt as pyjwt
@@ -35,8 +36,13 @@ def get_client_ip(request: Request) -> str:
     if trusted_proxies and peer_ip in trusted_proxies:
         forwarded_for = request.headers.get("X-Forwarded-For", "")
         if forwarded_for:
-            # Take the first (client) IP from the chain
-            return forwarded_for.split(",")[0].strip()
+            # Walk from right to left to find the rightmost IP that is not itself a trusted proxy
+            ips = [ip.strip() for ip in forwarded_for.split(",") if ip.strip()]
+            for ip in reversed(ips):
+                if ip not in trusted_proxies:
+                    return ip
+            if ips:
+                return ips[0]
 
     return peer_ip
 
@@ -140,8 +146,8 @@ def verify_csrf(
             detail="CSRF token missing or invalid",
         )
 
-    # Also verify the cookie matches the header (double-submit)
-    if x_csrf_token != csrf_token:
+    # Also verify the cookie matches the header using constant-time comparison (double-submit)
+    if not hmac.compare_digest(x_csrf_token, csrf_token):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="CSRF token missing or invalid",

@@ -28,7 +28,7 @@ def upgrade() -> None:
         sa.Column('user_id', sa.String(length=36), nullable=False),
         sa.Column('token_hash', sa.String(length=64), nullable=False),
         sa.Column('family_id', sa.String(length=36), nullable=False),
-        sa.Column('is_revoked', sa.Boolean(), nullable=False, server_default=sa.text('0')),
+        sa.Column('is_revoked', sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False,
                   server_default=sa.func.now()),

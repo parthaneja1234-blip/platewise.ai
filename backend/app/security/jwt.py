@@ -10,6 +10,9 @@ import jwt
 
 from app.config import settings
 
+# Hardcoded constant algorithm: pinning to HS256 (not user-configurable)
+JWT_ALGORITHM = "HS256"
+
 
 def create_access_token(
     user_id: str,
@@ -36,7 +39,7 @@ def create_access_token(
         "exp": expire,
     }
 
-    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=JWT_ALGORITHM)
 
 
 def decode_access_token(token: str) -> dict:
@@ -50,7 +53,7 @@ def decode_access_token(token: str) -> dict:
     payload = jwt.decode(
         token,
         settings.SECRET_KEY,
-        algorithms=[settings.JWT_ALGORITHM],
+        algorithms=[JWT_ALGORITHM],
         options={"require": ["sub", "exp", "iat", "jti", "type"]},
     )
 
@@ -82,7 +85,7 @@ def create_refresh_token_jwt(
         "exp": expire,
     }
 
-    return jwt.encode(payload, settings.REFRESH_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    return jwt.encode(payload, settings.REFRESH_SECRET_KEY, algorithm=JWT_ALGORITHM)
 
 
 def decode_refresh_token(token: str) -> dict:
@@ -95,7 +98,7 @@ def decode_refresh_token(token: str) -> dict:
     payload = jwt.decode(
         token,
         settings.REFRESH_SECRET_KEY,
-        algorithms=[settings.JWT_ALGORITHM],
+        algorithms=[JWT_ALGORITHM],
         options={"require": ["sub", "exp", "iat", "jti", "type"]},
     )
 

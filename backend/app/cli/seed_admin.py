@@ -93,17 +93,18 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Seed initial PlateWise AI administrator account.")
     parser.add_argument("--email", required=True, help="Administrator email address")
     parser.add_argument("--name", required=True, help="Administrator full name")
-    parser.add_argument("--password", required=False, help="Administrator password (prompted securely if omitted)")
 
     args = parser.parse_args()
 
-    password = args.password
-    if not password:
+    if sys.stdin.isatty():
         password = getpass.getpass("Enter admin password (min 12 characters): ")
         password_confirm = getpass.getpass("Confirm admin password: ")
         if password != password_confirm:
             print("Error: Passwords do not match.", file=sys.stderr)
             return 1
+    else:
+        # Piped/redirected stdin for automated environments
+        password = sys.stdin.readline().strip()
 
     try:
         admin = seed_admin(email=args.email, full_name=args.name, password=password)
