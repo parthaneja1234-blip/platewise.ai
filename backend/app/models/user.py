@@ -35,9 +35,6 @@ class User(Base, BaseModelMixin):
     failed_login_attempts = Column(Integer, default=0, nullable=False)
     locked_until = Column(DateTime(timezone=True), nullable=True)
 
-    # Security: Rotating Refresh Token Tracking (revocation upon reuse)
-    refresh_token_hash = Column(String(255), nullable=True)
-
     # Relationships
     cafeterias = relationship("Cafeteria", secondary=user_cafeterias, back_populates="users")
     audit_logs = relationship("AuditLog", back_populates="user", cascade="all, delete-orphan")

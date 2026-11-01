@@ -1,5 +1,5 @@
 from typing import List, Union
-from pydantic import AnyHttpUrl, field_validator, ValidationInfo
+from pydantic import AnyHttpUrl, field_validator, model_validator, ValidationInfo
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -58,6 +58,19 @@ class Settings(BaseSettings):
     ACCOUNT_LOCKOUT_ATTEMPTS: int = 5
     ACCOUNT_LOCKOUT_MINUTES: int = 15
 
+    # Password Policy
+    PASSWORD_MIN_LENGTH: int = 12
+
+    # Trusted Proxies for X-Forwarded-For (empty = do not trust any proxy header)
+    TRUSTED_PROXIES: Union[str, List[str]] = ""
+
+    @field_validator("TRUSTED_PROXIES", mode="before")
+    @classmethod
+    def assemble_trusted_proxies(cls, v: Union[str, List[str]]) -> List[str]:
+        if isinstance(v, str):
+            return [p.strip() for p in v.split(",") if p.strip()]
+        return v
+
     # University Mess / Cafeteria Impact Defaults
     DEFAULT_COST_PER_KG_INR: float = 45.0  # ₹45 per kg average institutional food prep cost
     DEFAULT_EMISSION_FACTOR_CO2E: float = 2.5  # 2.5 kg CO2e per kg food waste (IPCC/FAO standard)
@@ -103,6 +116,17 @@ class Settings(BaseSettings):
             )
         return v
 
+    @model_validator(mode="after")
+    def validate_production_cookie_secure(self) -> "Settings":
+        """Abort startup if COOKIE_SECURE=False in production to prevent cookie exposure over HTTP."""
+        if self.ENVIRONMENT == "production" and not self.COOKIE_SECURE:
+            raise ValueError(
+                "COOKIE_SECURE must be True when ENVIRONMENT is 'production'. "
+                "Running without Secure cookies in production exposes tokens to network interception."
+            )
+        return self
+
 
 settings = Settings()
+
 

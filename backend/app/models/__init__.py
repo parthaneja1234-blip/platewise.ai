@@ -7,6 +7,7 @@ from app.models.meal import MealRecord, MealType
 from app.models.calendar_event import CalendarEvent, EventType
 from app.models.forecast import ForecastRecord
 from app.models.audit_log import AuditLog
+from app.models.refresh_token import RefreshToken
 
 __all__ = [
     "Base",
@@ -22,4 +23,5 @@ __all__ = [
     "EventType",
     "ForecastRecord",
     "AuditLog",
+    "RefreshToken",
 ]

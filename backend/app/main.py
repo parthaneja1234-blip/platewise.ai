@@ -8,16 +8,34 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, settings
 from app.database import get_db
+from app.middleware.security_headers import SecurityHeadersMiddleware
+from app.routers.auth import router as auth_router
 
 
 def create_app(custom_settings: Optional[Settings] = None) -> FastAPI:
     """
     Application factory for PlateWise AI FastAPI service.
     Enforces production security controls (OWASP ASVS):
+    - Validates configuration security at startup.
+    - Adds OWASP security headers (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy).
+    - Configures strict CORS allowlist.
+    - Mounts authentication router (/api/v1/auth).
     - Disables Swagger UI (/docs), ReDoc (/redoc), and OpenAPI specification (/openapi.json) in production.
     - Limits health check details in production to avoid exposing internal infrastructure metadata.
     """
     cfg = custom_settings or settings
+
+    # Startup validation: abort immediately if production security invariants are violated
+    if cfg.ENVIRONMENT == "production":
+        if not cfg.COOKIE_SECURE:
+            raise ValueError("COOKIE_SECURE must be True when ENVIRONMENT is 'production'.")
+        if len(cfg.SECRET_KEY) < 32:
+            raise ValueError("SECRET_KEY must be at least 32 characters in production.")
+        if len(cfg.REFRESH_SECRET_KEY) < 32:
+            raise ValueError("REFRESH_SECRET_KEY must be at least 32 characters in production.")
+        if len(cfg.CSRF_SECRET) < 32:
+            raise ValueError("CSRF_SECRET must be at least 32 characters in production.")
+
     is_prod = cfg.ENVIRONMENT == "production"
 
     application = FastAPI(
@@ -30,13 +48,20 @@ def create_app(custom_settings: Optional[Settings] = None) -> FastAPI:
 
     origins = cfg.CORS_ORIGINS if isinstance(cfg.CORS_ORIGINS, list) else [cfg.CORS_ORIGINS]
 
+    # Add security headers middleware (CSP, HSTS, X-Frame-Options, etc.)
+    application.add_middleware(SecurityHeadersMiddleware)
+
+    # Configure strict CORS middleware
     application.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["*"],
+        allow_headers=["Content-Type", "Authorization", "X-CSRF-Token", "Accept", "Origin", "X-Requested-With"],
     )
+
+    # Include API Routers
+    application.include_router(auth_router)
 
     @application.get("/health", tags=["Health"])
     @application.get("/api/health", tags=["Health"], include_in_schema=False)

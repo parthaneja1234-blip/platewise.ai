@@ -11,6 +11,7 @@ VALID_SETTINGS_BASE = {
     "REFRESH_SECRET_KEY": "b" * 32,
     "CSRF_SECRET": "c" * 32,
     "POSTGRES_PASSWORD": "d" * 16,
+    "COOKIE_SECURE": True,
 }
 
 
