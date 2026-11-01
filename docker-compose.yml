@@ -29,6 +29,9 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-platewise}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-platewise_db}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be configured in .env}
+      REFRESH_SECRET_KEY: ${REFRESH_SECRET_KEY:?REFRESH_SECRET_KEY must be configured in .env}
+      CSRF_SECRET: ${CSRF_SECRET:?CSRF_SECRET must be configured in .env}
     ports:
       - "127.0.0.1:8000:8000"
     healthcheck:
