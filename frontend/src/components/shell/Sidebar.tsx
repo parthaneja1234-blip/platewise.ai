@@ -60,7 +60,14 @@ export const navItems = [
     icon: Smartphone,
     badge: null,
   },
+  {
+    name: "Plate Studio",
+    href: "/plate-studio",
+    icon: Sparkles,
+    badge: "3D",
+  },
 ];
+
 
 interface SidebarProps {
   collapsed: boolean;

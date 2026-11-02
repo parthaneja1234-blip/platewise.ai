@@ -1,0 +1,1 @@
+"""PlateWise AI Demo Module."""

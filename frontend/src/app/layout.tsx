@@ -1,18 +1,19 @@
 import type { Metadata } from "next";
-import { Playfair_Display, Plus_Jakarta_Sans } from "next/font/google";
+import { Fraunces, Inter } from "next/font/google";
 import "./globals.css";
 
-const playfair = Playfair_Display({
+const fraunces = Fraunces({
   subsets: ["latin"],
-  variable: "--font-playfair",
+  variable: "--font-fraunces",
   display: "swap",
 });
 
-const jakarta = Plus_Jakarta_Sans({
+const inter = Inter({
   subsets: ["latin"],
-  variable: "--font-jakarta",
+  variable: "--font-inter",
   display: "swap",
 });
+
 
 export const metadata: Metadata = {
   title: "PlateWise AI — Institutional Food Waste Intelligence & Demand Forecasting",
@@ -33,10 +34,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${playfair.variable} ${jakarta.variable} h-full`}>
-      <body className="min-h-full flex flex-col bg-[#1a3a1a] text-[#FAF6EE] antialiased">
+    <html lang="en" className={`${fraunces.variable} ${inter.variable} h-full`}>
+      <body className="min-h-full flex flex-col bg-[#1a3a1a] text-[#FAF8F2] antialiased">
         {children}
       </body>
     </html>
+
   );
 }

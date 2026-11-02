@@ -11,6 +11,11 @@ from app.database import get_db
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.routers.auth import router as auth_router
 
+try:
+    from app.demo.router import router as demo_router
+except ImportError:
+    from backend.app.demo.router import router as demo_router
+
 
 def create_app(custom_settings: Optional[Settings] = None) -> FastAPI:
     """
@@ -62,6 +67,7 @@ def create_app(custom_settings: Optional[Settings] = None) -> FastAPI:
 
     # Include API Routers
     application.include_router(auth_router)
+    application.include_router(demo_router)
 
     @application.get("/health", tags=["Health"])
     @application.get("/api/health", tags=["Health"], include_in_schema=False)

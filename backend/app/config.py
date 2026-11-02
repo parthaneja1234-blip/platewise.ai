@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
     LOG_LEVEL: str = "INFO"
+    DEMO_MODE: bool = True  # Safe default: enabled in development, disabled in production
 
     # Database Settings (Required; no defaults to prevent accidental fallback)
     POSTGRES_USER: str = "platewise"
@@ -141,6 +142,11 @@ class Settings(BaseSettings):
                 "COOKIE_SECURE must be True when ENVIRONMENT is 'production'. "
                 "Running without Secure cookies in production exposes tokens to network interception."
             )
+
+        # 4. In production, default DEMO_MODE to False unless explicitly configured
+        if self.ENVIRONMENT == "production" and "DEMO_MODE" not in self.model_fields_set:
+            object.__setattr__(self, "DEMO_MODE", False)
+
         return self
 
 
