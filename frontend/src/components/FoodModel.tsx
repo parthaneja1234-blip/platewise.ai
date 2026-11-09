@@ -195,12 +195,30 @@ export default function FoodModel({
   );
 }
 
+export const KEY_MODELS = [
+  "loaf-round",
+  "bread",
+  "croissant",
+  "plate-dinner",
+  "bowl-soup",
+  "rice-ball",
+  "apple",
+  "cup-tea",
+];
+
 // Preload helper
 FoodModel.preload = (id: string) => {
   const meta = MODEL_REGISTRY_MAP[id];
-  if (meta) {
+  if (meta && typeof window !== "undefined") {
     useGLTF.preload(meta.filePath, false, true, (loader) => {
       loader.setMeshoptDecoder(decoder);
     });
   }
 };
+
+export function preloadKeyModels() {
+  if (typeof window === "undefined") return;
+  KEY_MODELS.forEach((id) => {
+    FoodModel.preload(id);
+  });
+}

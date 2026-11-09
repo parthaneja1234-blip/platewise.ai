@@ -21,9 +21,11 @@ from sqlalchemy.orm import Session, joinedload
 from app.config import settings
 from app.database import get_db
 from app.deps import get_client_ip, get_current_user, verify_csrf
+from app.models.cafeteria import Cafeteria
+from app.models.join_code import MessJoinCode
 from app.models.refresh_token import RefreshToken
-from app.models.user import User
-from app.security import verify_password, DUMMY_HASH
+from app.models.user import User, UserRole
+from app.security import verify_password, hash_password, DUMMY_HASH
 from app.security.cookies import set_auth_cookies, clear_auth_cookies
 from app.security.csrf import generate_csrf_token
 from app.security.jwt import (
@@ -43,6 +45,13 @@ router = APIRouter(prefix="/api/v1/auth", tags=["Authentication"])
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+
+class StudentRegisterRequest(BaseModel):
+    email: EmailStr
+    full_name: str
+    password: str
+    join_code: str
 
 
 class LoginResponse(BaseModel):
@@ -388,14 +397,18 @@ def login(
         _record_ip_failure(client_ip)
         new_attempts, new_locked_until = _record_lockout_failure(email_clean, client_ip)
 
-        # Atomically increment failed_login_attempts in SQL (Item 3)
+        # Atomically increment failed_login_attempts in SQL and set locked_until if locked (Item 3)
+        update_vals = {"failed_login_attempts": User.failed_login_attempts + 1}
+        if new_locked_until is not None:
+            update_vals["locked_until"] = new_locked_until
+
         db.execute(
             update(User)
             .where(User.id == user.id)
-            .values(failed_login_attempts=User.failed_login_attempts + 1)
+            .values(**update_vals)
         )
         db.flush()
-        db.refresh(user, attribute_names=["failed_login_attempts"])
+        db.refresh(user)
         _apply_progressive_delay(new_attempts)
 
         if new_locked_until is not None:
@@ -780,3 +793,137 @@ def get_me(current_user: User = Depends(get_current_user)):
         role=current_user.role.value,
         cafeteria_ids=[c.id for c in current_user.cafeterias],
     )
+
+
+@router.post("/register-student", response_model=LoginResponse)
+def register_student(
+    request: Request,
+    response: Response,
+    body: StudentRegisterRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Student registration via expiring, limited-use mess join code (Section 12).
+    - Checks origin header.
+    - Hashes join code and verifies validity, expiration, and usage limits.
+    - Atomically increments join code usage counter.
+    - Creates student user and links them to the mess hall.
+    - Automatically issues tokens and sets auth cookies.
+    """
+    _verify_origin_allowed(request)
+
+    client_ip = get_client_ip(request)
+    user_agent = _get_user_agent(request)
+
+    email_clean = body.email.strip().lower()
+    name_clean = body.full_name.strip()
+    code_clean = body.join_code.strip().upper()
+
+    if len(body.password) < settings.PASSWORD_MIN_LENGTH:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Password must be at least {settings.PASSWORD_MIN_LENGTH} characters long.",
+        )
+
+    # Check email uniqueness
+    existing = db.query(User).filter(User.email == email_clean).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A user with this email address already exists.",
+        )
+
+    # Validate join code
+    code_hash = hashlib.sha256(code_clean.encode()).hexdigest()
+    join_code = db.query(MessJoinCode).filter(
+        MessJoinCode.code_hash == code_hash,
+        MessJoinCode.is_active == True,
+    ).first()
+
+    if not join_code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired mess join code.",
+        )
+
+    if _is_past(join_code.expires_at):
+        join_code.is_active = False
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This join code has expired. Please request a new code from your mess manager.",
+        )
+
+    if join_code.used_count >= join_code.max_uses:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This join code has reached its maximum usage limit.",
+        )
+
+    # Atomically increment used count
+    join_code.used_count += 1
+
+    # Load associated mess hall
+    cafeteria = db.query(Cafeteria).filter(Cafeteria.id == join_code.mess_id).first()
+    if not cafeteria:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The cafeteria linked to this join code no longer exists.",
+        )
+
+    # Create new student user
+    new_user = User(
+        email=email_clean,
+        full_name=name_clean,
+        hashed_password=hash_password(body.password),
+        role=UserRole.STUDENT,
+        is_active=True,
+        failed_login_attempts=0,
+        locked_until=None,
+    )
+    new_user.cafeterias.append(cafeteria)
+    db.add(new_user)
+    db.flush()
+
+    write_audit_log(
+        db,
+        "STUDENT_REGISTERED",
+        user_id=new_user.id,
+        ip_address=client_ip,
+        user_agent=user_agent,
+        details={
+            "email": new_user.email,
+            "mess_id": cafeteria.id,
+            "mess_name": cafeteria.name,
+            "join_code_id": join_code.id,
+        },
+    )
+
+    # Automatically log the student in
+    access_token = create_access_token(
+        user_id=new_user.id,
+        email=new_user.email,
+        role=new_user.role.value,
+        cafeteria_ids=[cafeteria.id],
+    )
+
+    family_id = str(uuid.uuid4())
+    refresh_jwt = create_refresh_token_jwt(
+        user_id=new_user.id,
+        family_id=family_id,
+    )
+    refresh_hash = _hash_token(refresh_jwt)
+    refresh_record = RefreshToken(
+        user_id=new_user.id,
+        token_hash=refresh_hash,
+        family_id=family_id,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+    )
+    db.add(refresh_record)
+
+    csrf_token = generate_csrf_token(new_user.id)
+    db.commit()
+
+    set_auth_cookies(response, access_token, refresh_jwt, csrf_token)
+    return LoginResponse(message="Student registered successfully", csrf_token=csrf_token)
+

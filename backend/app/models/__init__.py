@@ -8,6 +8,10 @@ from app.models.calendar_event import CalendarEvent, EventType
 from app.models.forecast import ForecastRecord
 from app.models.audit_log import AuditLog
 from app.models.refresh_token import RefreshToken
+from app.models.join_code import MessJoinCode
+from app.models.rating import MessRating
+from app.models.student_rsvp import StudentRsvp
+from app.models.student_plate import StudentPlate
 
 __all__ = [
     "Base",
@@ -24,4 +28,8 @@ __all__ = [
     "ForecastRecord",
     "AuditLog",
     "RefreshToken",
+    "MessJoinCode",
+    "MessRating",
+    "StudentRsvp",
+    "StudentPlate",
 ]

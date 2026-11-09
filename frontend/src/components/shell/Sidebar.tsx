@@ -14,8 +14,16 @@ import {
   Info,
   PanelLeftClose,
   PanelLeftOpen,
+  PlayCircle,
+  Building2,
+  Plus,
+  UtensilsCrossed,
+  Settings,
+  Users,
+  ShieldCheck,
 } from "lucide-react";
 import clsx from "clsx";
+import { useAppContext } from "@/context/AppContext";
 
 export const navItems = [
   {
@@ -37,6 +45,12 @@ export const navItems = [
     badge: "AI",
   },
   {
+    name: "Simulate Today",
+    href: "/simulate",
+    icon: PlayCircle,
+    badge: "Rush",
+  },
+  {
     name: "Log Meals",
     href: "/log",
     icon: ClipboardList,
@@ -47,6 +61,24 @@ export const navItems = [
     href: "/menu",
     icon: BookOpen,
     badge: null,
+  },
+  {
+    name: "Foods & Calories",
+    href: "/foods",
+    icon: UtensilsCrossed,
+    badge: "Edit",
+  },
+  {
+    name: "Plate Studio",
+    href: "/plate-studio",
+    icon: Sparkles,
+    badge: "3D",
+  },
+  {
+    name: "Engagement",
+    href: "/engagement",
+    icon: Users,
+    badge: "Pulse",
   },
   {
     name: "Impact",
@@ -61,10 +93,16 @@ export const navItems = [
     badge: null,
   },
   {
-    name: "Plate Studio",
-    href: "/plate-studio",
-    icon: Sparkles,
-    badge: "3D",
+    name: "Mess Settings",
+    href: "/settings",
+    icon: Settings,
+    badge: null,
+  },
+  {
+    name: "Admin Console",
+    href: "/admin",
+    icon: ShieldCheck,
+    badge: "Admin",
   },
 ];
 
@@ -76,6 +114,7 @@ interface SidebarProps {
 
 export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
   const pathname = usePathname();
+  const { activeMess, setIsAddMessOpen } = useAppContext();
 
   return (
     <aside
@@ -111,7 +150,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
         <button
           type="button"
           onClick={onToggleCollapse}
-          className="p-1.5 rounded-lg text-[#9ab39a] hover:text-amber-300 hover:bg-[#234c23] transition-colors focus-ring"
+          className="p-1.5 rounded-lg text-[#9ab39a] hover:text-amber-300 hover:bg-[#234c23] transition-colors focus-ring cursor-pointer"
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
@@ -171,38 +210,54 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
 
       {/* Sidebar Footer */}
       <div className="p-3 border-t border-amber-500/15 space-y-2">
-        {/* About Link to /welcome */}
+        {/* About & Credits Link to /about */}
         <Link
-          href="/welcome"
-          title={collapsed ? "About PlateWise" : undefined}
+          href="/about"
+          title={collapsed ? "About & Credits" : undefined}
           className="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium text-[#9ab39a] hover:bg-[#234c23] hover:text-amber-300 transition-colors focus-ring"
         >
           <Info className="w-4 h-4 shrink-0 text-amber-400" />
-          {!collapsed && <span>About PlateWise</span>}
+          {!collapsed && <span>About & Credits</span>}
         </Link>
 
-        {/* Cafeteria status card */}
+        {/* Dynamic Cafeteria Status Card */}
         {!collapsed ? (
-          <div className="p-3 rounded-xl bg-[#122812] border border-amber-500/15 flex items-center justify-between">
-            <div className="overflow-hidden">
-              <div className="text-[11px] font-medium text-[#faf6ee] truncate">
-                Hostel 1 Mess
+          <div className="p-2.5 rounded-xl bg-[#122812] border border-amber-500/15 flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 overflow-hidden">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0 animate-pulse" />
+                <span className="text-[11px] font-semibold text-[#faf6ee] truncate" title={activeMess.name}>
+                  {activeMess.name}
+                </span>
               </div>
-              <div className="text-[10px] text-emerald-400 flex items-center gap-1.5 mt-0.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span>Engine Active</span>
-              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddMessOpen(true)}
+                className="p-1 rounded text-amber-400 hover:text-amber-200 hover:bg-forest-900 transition-colors cursor-pointer"
+                title="Add New Dining Hall"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
             </div>
-            <span className="text-[10px] font-mono text-amber-400 bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-500/30">
-              v1.0
-            </span>
+            <div className="flex items-center justify-between text-[10px] text-[#9ab39a]">
+              <span className="truncate">{activeMess.location || activeMess.campus_location || "Campus Hall"}</span>
+              <span className="font-mono text-amber-400/90 shrink-0 ml-1">Cap: {activeMess.capacity}</span>
+            </div>
           </div>
         ) : (
           <div className="flex justify-center p-1">
-            <span className="w-2 h-2 rounded-full bg-emerald-400" title="Connected" />
+            <button
+              type="button"
+              onClick={() => setIsAddMessOpen(true)}
+              className="w-8 h-8 rounded-xl bg-[#122812] border border-amber-500/20 flex items-center justify-center text-amber-400 hover:text-amber-200 transition-colors cursor-pointer"
+              title={`Active: ${activeMess.name} — Click to add dining hall`}
+            >
+              <Building2 className="w-4 h-4" />
+            </button>
           </div>
         )}
       </div>
     </aside>
   );
 }
+

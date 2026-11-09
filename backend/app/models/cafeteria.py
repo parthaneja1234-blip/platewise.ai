@@ -1,4 +1,5 @@
-from sqlalchemy import Column, String, Float
+from sqlalchemy import Column, String, Float, Boolean
+import sqlalchemy as sa
 from sqlalchemy.orm import relationship
 from app.database import Base
 from app.models.base import BaseModelMixin
@@ -13,6 +14,7 @@ class Cafeteria(Base, BaseModelMixin):
 
     name = Column(String(120), nullable=False, unique=True, index=True)
     campus_location = Column(String(200), nullable=False)
+    is_demo = Column(Boolean, default=False, nullable=False, server_default=sa.false())
     
     # Financial & Carbon parameters (configurable per cafeteria)
     cost_per_kg_inr = Column(Float, nullable=False, default=45.0)

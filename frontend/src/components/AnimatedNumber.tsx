@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { formatNumber, EM_DASH } from "@/lib/formatters";
 
 interface AnimatedNumberProps {
-  value: number;
+  value: number | null | undefined;
   duration?: number;
   decimals?: number;
   prefix?: string;
@@ -21,6 +22,7 @@ export default function AnimatedNumber({
   formatter,
   className,
 }: AnimatedNumberProps) {
+  const safeEndVal = typeof value === "number" && !Number.isNaN(value) && Number.isFinite(value) ? value : 0;
   const [current, setCurrent] = useState<number>(0);
 
   useEffect(() => {
@@ -29,12 +31,12 @@ export default function AnimatedNumber({
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches
     ) {
-      setCurrent(value);
+      setCurrent(safeEndVal);
       return;
     }
 
     const startVal = 0;
-    const endVal = value;
+    const endVal = safeEndVal;
     const startTime = performance.now();
 
     let frameId: number;
@@ -56,16 +58,19 @@ export default function AnimatedNumber({
 
     frameId = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(frameId);
-  }, [value, duration]);
+  }, [safeEndVal, duration]);
+
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return (
+      <span className={`tabular-nums font-mono ${className || ""}`}>
+        {EM_DASH}
+      </span>
+    );
+  }
 
   const formatted = formatter
     ? formatter(current)
-    : decimals > 0
-    ? current.toLocaleString("en-IN", {
-        minimumFractionDigits: decimals,
-        maximumFractionDigits: decimals,
-      })
-    : Math.round(current).toLocaleString("en-IN");
+    : formatNumber(current, decimals);
 
   return (
     <span className={`tabular-nums font-mono ${className || ""}`}>

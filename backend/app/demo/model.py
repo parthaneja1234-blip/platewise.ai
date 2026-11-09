@@ -135,6 +135,7 @@ class PredictionEngine:
         temperature_c: float = 30.0,
         menu_dish_ids: Optional[List[str]] = None,
         rsvp_delta: int = 0,
+        log_shift: float = 0.0,
     ) -> Dict[str, Any]:
         """
         Runs explainable forecast and derives per-dish prep recommendations.
@@ -154,13 +155,14 @@ class PredictionEngine:
         ]
 
         raw_pred = float(self.model.predict([features])[0])
-        # Add live RSVP adjustments from students eating/skipping
-        adjusted_pred = raw_pred + rsvp_delta
+        # Add live RSVP adjustments and recent meal log calibration shift
+        adjusted_pred = raw_pred + rsvp_delta + log_shift
         predicted_turnout = max(50, min(int(round(capacity * 0.98)), int(round(adjusted_pred))))
 
         # p10 / p90 80% confidence interval
         p10 = max(40, int(round(predicted_turnout - 1.28 * self.residual_std)))
         p90 = min(int(round(capacity * 0.98)), int(round(predicted_turnout + 1.28 * self.residual_std)))
+
 
         # Driver breakdown relative to nominal meal baseline
         # Baseline = model prediction with neutral zero-modifiers on Wednesday
@@ -253,6 +255,18 @@ class PredictionEngine:
                 "direction": "positive" if rsvp_delta > 0 else "negative",
                 "description": f"Net verified attendance responses ({rsvp_delta:+d})",
             })
+
+        # 7. Recent Meal Logs Adaptive Feedback
+        if abs(log_shift) > 0.5:
+            log_pct = round((log_shift / nominal_base) * 100, 1)
+            drivers.append({
+                "category": "history",
+                "name": "Recent Meal Logs Feedback",
+                "impact_pct": log_pct,
+                "direction": "positive" if log_shift > 0 else "negative",
+                "description": f"Adaptive calibration from logged leftovers and consumption ({log_shift:+.1f} kg bias)",
+            })
+
 
         # Per-dish recommendations
         if not menu_dish_ids:

@@ -15,46 +15,44 @@ import {
   Clock,
   AlertTriangle,
   Info,
+  Plus,
 } from "lucide-react";
-import clsx from "clsx";
-import { demoApi, Mess } from "@/lib/api";
+import { useAppContext, ROLES } from "@/context/AppContext";
+import { useAuth } from "@/context/AuthContext";
 
 interface TopBarProps {
   onOpenCommandPalette: () => void;
 }
 
-const defaultMesses: Mess[] = [
-  {
-    id: "mess-boys-a",
-    name: "Boys Hostel Mess A",
-    capacity: 850,
-    type: "hostel_mess",
-    current_turnout_pct: 88,
-  },
-  {
-    id: "mess-central",
-    name: "Central Cafeteria",
-    capacity: 1400,
-    type: "central_court",
-    current_turnout_pct: 76,
-  },
+const MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const roles = [
-  { id: "manager", name: "Mess Manager", badge: "Operator", icon: Building2 },
-  { id: "admin", name: "Admin / Warden", badge: "Superuser", icon: ShieldCheck },
-  { id: "student", name: "Student", badge: "Diner", icon: User },
-];
+const ROLE_ICONS = {
+  manager: Building2,
+  admin: ShieldCheck,
+  student: User,
+};
 
 export default function TopBar({ onOpenCommandPalette }: TopBarProps) {
-  // Mess selector state
-  const [messes, setMesses] = useState<Mess[]>(defaultMesses);
-  const [selectedMess, setSelectedMess] = useState<Mess>(defaultMesses[0]);
+  const {
+    messes,
+    activeMess,
+    setActiveMessId,
+    activeRole,
+    setActiveRole,
+    setIsAddMessOpen,
+  } = useAppContext();
+
+  const { user, isDemoMode, logout, exitDemoMode } = useAuth();
+
+  // Mess dropdown state
   const [messDropdownOpen, setMessDropdownOpen] = useState(false);
   const messRef = useRef<HTMLDivElement>(null);
 
   // Role selector state
-  const [selectedRole, setSelectedRole] = useState(roles[0]);
   const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
   const roleRef = useRef<HTMLDivElement>(null);
 
@@ -65,28 +63,9 @@ export default function TopBar({ onOpenCommandPalette }: TopBarProps) {
   // Date state (seeded demo date: 2026-11-02)
   const [currentDate, setCurrentDate] = useState<Date>(new Date(2026, 10, 2));
 
-  // Fetch messes from API on mount
-  useEffect(() => {
-    demoApi
-      .getMesses()
-      .then((res) => {
-        if (res.messes && res.messes.length > 0) {
-          setMesses(res.messes);
-          setSelectedMess(res.messes[0]);
-        }
-      })
-      .catch((err) => {
-        console.warn("Using fallback messes:", err);
-      });
-  }, []);
-
+  // Deterministic date formatter avoiding SSR/client locale mismatch
   const formatDate = (d: Date) => {
-    return d.toLocaleDateString("en-US", {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
+    return `${WEEKDAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
   };
 
   const shiftDay = (days: number) => {
@@ -114,6 +93,8 @@ export default function TopBar({ onOpenCommandPalette }: TopBarProps) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  const RoleIcon = ROLE_ICONS[activeRole.id] || Building2;
+
   return (
     <header className="sticky top-0 z-20 h-18 bg-[#FAF8F2]/90 backdrop-blur-md border-b border-[#e3ded0] px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4">
       {/* Left Area: Mess Selector, Meal Countdown, Date Controls */}
@@ -129,7 +110,7 @@ export default function TopBar({ onOpenCommandPalette }: TopBarProps) {
           >
             <Building2 className="w-4 h-4 text-amber-700 shrink-0" />
             <span className="font-semibold text-[#14211a] truncate max-w-[130px] sm:max-w-[180px]">
-              {selectedMess.name}
+              {activeMess.name}
             </span>
             <ChevronDown className="w-3.5 h-3.5 text-[#728479] shrink-0" />
           </button>
@@ -139,26 +120,43 @@ export default function TopBar({ onOpenCommandPalette }: TopBarProps) {
               <div className="px-3 py-1.5 text-[11px] font-semibold text-[#728479] uppercase tracking-wider">
                 Select Dining Hall
               </div>
-              {messes.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => {
-                    setSelectedMess(m);
-                    setMessDropdownOpen(false);
-                  }}
-                  className="w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-[#FAF8F2] transition-colors focus-ring cursor-pointer"
-                >
-                  <div>
-                    <div className="font-medium text-[#14211a]">{m.name}</div>
-                    <div className="text-[10px] text-[#728479]">
-                      Capacity {m.capacity} • {m.current_turnout_pct}% avg turnout
+              <div className="max-h-60 overflow-y-auto">
+                {messes.map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={() => {
+                      setActiveMessId(m.id);
+                      setMessDropdownOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-[#FAF8F2] transition-colors focus-ring cursor-pointer"
+                  >
+                    <div className="overflow-hidden pr-2">
+                      <div className="font-medium text-[#14211a] truncate">{m.name}</div>
+                      <div className="text-[10px] text-[#728479] truncate">
+                        Capacity {m.capacity} • {m.current_turnout_pct || 80}% avg turnout
+                      </div>
                     </div>
-                  </div>
-                  {selectedMess.id === m.id && (
-                    <Check className="w-4 h-4 text-emerald-600" />
-                  )}
+                    {activeMess.id === m.id && (
+                      <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              {/* Add Mess Hall action button */}
+              <div className="border-t border-[#e3ded0] mt-1 pt-1 px-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMessDropdownOpen(false);
+                    setIsAddMessOpen(true);
+                  }}
+                  className="w-full text-left px-2.5 py-2 text-xs flex items-center gap-2 rounded-xl text-amber-800 hover:bg-amber-500/10 transition-colors font-semibold cursor-pointer"
+                >
+                  <Plus className="w-4 h-4 text-amber-700 shrink-0" />
+                  <span>+ Add Dining Hall...</span>
                 </button>
-              ))}
+              </div>
             </div>
           )}
         </div>
@@ -259,37 +257,88 @@ export default function TopBar({ onOpenCommandPalette }: TopBarProps) {
             aria-haspopup="listbox"
             aria-expanded={roleDropdownOpen}
           >
-            <selectedRole.icon className="w-4 h-4 text-emerald-700 shrink-0" />
-            <span className="hidden md:inline font-medium">{selectedRole.name}</span>
+            <RoleIcon className="w-4 h-4 text-emerald-700 shrink-0" />
+            <span className="hidden md:inline font-medium">{activeRole.name}</span>
             <ChevronDown className="w-3 h-3 text-[#728479] shrink-0" />
           </button>
 
           {roleDropdownOpen && (
-            <div className="absolute right-0 mt-1.5 w-48 rounded-2xl bg-white border border-[#e3ded0] shadow-xl py-2 z-50 animate-in fade-in zoom-in-95">
+            <div className="absolute right-0 mt-1.5 w-52 rounded-2xl bg-white border border-[#e3ded0] shadow-xl py-2 z-50 animate-in fade-in zoom-in-95">
               <div className="px-3 py-1.5 text-[11px] font-semibold text-[#728479] uppercase tracking-wider">
                 Switch Perspective
               </div>
-              {roles.map((r) => {
-                const Icon = r.icon;
+              {ROLES.map((r) => {
+                const Icon = ROLE_ICONS[r.id] || Building2;
                 return (
                   <button
                     key={r.id}
                     onClick={() => {
-                      setSelectedRole(r);
+                      setActiveRole(r.id);
                       setRoleDropdownOpen(false);
                     }}
                     className="w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-[#FAF8F2] transition-colors focus-ring cursor-pointer"
                   >
                     <div className="flex items-center gap-2">
                       <Icon className="w-3.5 h-3.5 text-emerald-700" />
-                      <span className="font-medium text-[#14211a]">{r.name}</span>
+                      <div>
+                        <div className="font-medium text-[#14211a]">{r.name}</div>
+                        <div className="text-[10px] text-[#728479]">{r.badge}</div>
+                      </div>
                     </div>
-                    {selectedRole.id === r.id && (
-                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    {activeRole.id === r.id && (
+                      <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                     )}
                   </button>
                 );
               })}
+
+              <div className="my-1.5 border-t border-[#e3ded0]" />
+
+              {user ? (
+                <div className="px-3 py-1.5">
+                  <div className="text-[11px] font-semibold text-[#14211a] truncate" title={user.email}>
+                    {user.full_name || user.email}
+                  </div>
+                  <div className="text-[10px] text-emerald-700 font-mono capitalize">{user.role}</div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRoleDropdownOpen(false);
+                      logout();
+                    }}
+                    id="topbar-logout-btn"
+                    className="w-full mt-2 py-1.5 px-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 text-xs font-semibold text-center transition-colors cursor-pointer"
+                  >
+                    Log Out
+                  </button>
+                </div>
+              ) : isDemoMode ? (
+                <div className="px-3 py-1.5">
+                  <div className="text-[10px] text-amber-700 font-semibold uppercase tracking-wider mb-1">
+                    Demo Mode
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRoleDropdownOpen(false);
+                      exitDemoMode();
+                    }}
+                    id="topbar-exit-demo-btn"
+                    className="w-full py-1.5 px-2 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-semibold text-center transition-colors cursor-pointer"
+                  >
+                    Exit Demo & Sign In
+                  </button>
+                </div>
+              ) : (
+                <div className="px-3 py-1.5">
+                  <a
+                    href="/login"
+                    className="block w-full py-1.5 px-2 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-semibold text-center transition-colors cursor-pointer"
+                  >
+                    Sign In
+                  </a>
+                </div>
+              )}
             </div>
           )}
         </div>

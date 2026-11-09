@@ -8,6 +8,7 @@ Manages:
 """
 
 import json
+import re
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional
@@ -21,6 +22,7 @@ class DemoStore:
         self.max_rsvps = 1000
         self.max_plates = 500
 
+        self.messes: List[Dict[str, Any]] = []
         self.logs: List[Dict[str, Any]] = []
         self.rsvps: Dict[str, Dict[str, Any]] = {}
         self.saved_plates: List[Dict[str, Any]] = []
@@ -28,8 +30,79 @@ class DemoStore:
         self.foods: List[Dict[str, Any]] = []
         self.food_map: Dict[str, Dict[str, Any]] = {}
 
+        self._seed_messes()
         self._load_foods()
         self._seed_popular_plates()
+
+    def _seed_messes(self):
+        self.messes = [
+            {
+                "id": "mess-boys-a",
+                "name": "Boys Hostel Mess A",
+                "campus_location": "North Campus - Block 4",
+                "location": "North Campus - Block 4",
+                "capacity": 850,
+                "type": "hostel_mess",
+                "avg_daily_diners": 710,
+                "current_turnout_pct": 88,
+                "status": "active",
+                "manager_name": "Ramesh Kumar Sharma",
+                "meal_times": {
+                    "breakfast": "07:30 - 09:30",
+                    "lunch": "12:00 - 14:30",
+                    "dinner": "19:30 - 21:30",
+                },
+            },
+            {
+                "id": "mess-central",
+                "name": "Central Cafeteria",
+                "campus_location": "Student Activity Center (SAC)",
+                "location": "Student Activity Center (SAC)",
+                "capacity": 1200,
+                "type": "central_court",
+                "avg_daily_diners": 1020,
+                "current_turnout_pct": 76,
+                "status": "active",
+                "manager_name": "Suresh Babu",
+                "meal_times": {
+                    "breakfast": "08:00 - 10:00",
+                    "lunch": "12:00 - 15:00",
+                    "dinner": "19:00 - 22:00",
+                },
+            },
+        ]
+
+    def get_messes(self) -> List[Dict[str, Any]]:
+        return list(self.messes)
+
+    def add_mess(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        slug = re.sub(r"[^a-z0-9]+", "-", data["name"].lower()).strip("-")
+        mess_id = f"mess-{slug}" if slug else f"mess-{len(self.messes) + 1}"
+        if any(m["id"] == mess_id for m in self.messes):
+            mess_id = f"{mess_id}-{len(self.messes) + 1}"
+
+        loc = data.get("location") or data.get("campus_location") or "Campus Main Zone"
+        meal_times = {
+            "breakfast": data.get("breakfast_time", "07:30 - 09:30"),
+            "lunch": data.get("lunch_time", "12:00 - 14:30"),
+            "dinner": data.get("dinner_time", "19:30 - 21:30"),
+        }
+        new_mess = {
+            "id": mess_id,
+            "name": data["name"],
+            "capacity": int(data["capacity"]),
+            "campus_location": loc,
+            "location": loc,
+            "type": data.get("type", "hostel_mess"),
+            "avg_daily_diners": int(int(data["capacity"]) * 0.82),
+            "current_turnout_pct": 82,
+            "status": "active",
+            "manager_name": data.get("manager_name", "Duty Manager"),
+            "meal_times": meal_times,
+        }
+        self.messes.append(new_mess)
+        return new_mess
+
 
     def _load_foods(self):
         with open(FOODS_JSON_PATH, "r", encoding="utf-8") as f:
@@ -300,7 +373,9 @@ class DemoStore:
         self.logs.clear()
         self.rsvps.clear()
         self.approved_plans.clear()
+        self._seed_messes()
         self._seed_popular_plates()
 
 
 store = DemoStore()
+

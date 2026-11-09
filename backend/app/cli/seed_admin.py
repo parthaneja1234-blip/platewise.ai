@@ -2,7 +2,8 @@
 CLI script to seed the initial system administrator.
 Fulfills Phase 2 Zero Open Self-Registration Policy (OWASP ASVS).
 Usage:
-    python -m app.cli.seed_admin --email admin@university.edu --name "System Administrator" [--password "SecretPass123!"]
+    python -m app.cli.seed_admin --email admin@university.edu --name "System Administrator"
+    (Password is prompted interactively or read securely from stdin)
 """
 import argparse
 import getpass

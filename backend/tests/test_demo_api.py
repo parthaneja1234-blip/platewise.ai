@@ -52,15 +52,44 @@ def test_forecast_model_beats_baselines():
 
 
 def test_get_messes_endpoint(client):
-    """GET /api/v1/demo/messes returns 2 active cafeterias with synthetic demo tag."""
+    """GET /api/v1/demo/messes returns active cafeterias with synthetic demo tag."""
     res = client.get("/api/v1/demo/messes")
     assert res.status_code == 200
     data = res.json()
     assert data["data_source"] == "synthetic_demo"
-    assert len(data["messes"]) == 2
+    assert len(data["messes"]) >= 2
     mess_ids = [m["id"] for m in data["messes"]]
     assert "mess-boys-a" in mess_ids
     assert "mess-central" in mess_ids
+
+
+def test_create_mess_endpoint(client):
+    """POST /api/v1/demo/messes creates a new mess hall with bounds validation."""
+    payload = {
+        "name": "Girls Hostel Mess B",
+        "capacity": 750,
+        "type": "hostel_mess",
+        "location": "South Campus - Block 9",
+        "breakfast_time": "07:30 - 09:30",
+        "lunch_time": "12:00 - 14:30",
+        "dinner_time": "19:30 - 21:30",
+    }
+    res = client.post("/api/v1/demo/messes", json=payload)
+    assert res.status_code == 201
+    data = res.json()
+    assert data["status"] == "success"
+    assert data["mess"]["name"] == "Girls Hostel Mess B"
+    assert data["mess"]["capacity"] == 750
+    assert data["mess"]["id"] == "mess-girls-hostel-mess-b"
+
+    # Verify it now appears in GET /messes
+    res_list = client.get("/api/v1/demo/messes")
+    names = [m["name"] for m in res_list.json()["messes"]]
+    assert "Girls Hostel Mess B" in names
+
+    # Validation test: invalid capacity
+    invalid_res = client.post("/api/v1/demo/messes", json={"name": "Bad", "capacity": 2})
+    assert invalid_res.status_code == 422
 
 
 def test_get_overview_endpoint(client):
@@ -276,7 +305,7 @@ def test_get_foods_catalogue(client):
     data = res.json()
     assert data["data_source"] == "synthetic_demo"
     assert "kcal values are approximate" in data["comment"]
-    assert len(data["foods"]) == 22
+    assert len(data["foods"]) >= 22
 
     # Every item must have verified: False
     for f in data["foods"]:
@@ -415,6 +444,21 @@ def test_approve_plan_endpoint(client):
     assert plan_res2.json()["is_approved"] is True
 
 
+def test_get_logs_endpoint(client):
+    """GET /api/v1/demo/logs returns list of service logs."""
+    res = client.get("/api/v1/demo/logs?limit=10")
+    assert res.status_code == 200
+    data = res.json()
+    assert "logs" in data
+    assert len(data["logs"]) > 0
+    first = data["logs"][0]
+    assert "dish_id" in first
+    assert "prepared_kg" in first
+    assert "consumed_kg" in first
+    assert "leftover_kg" in first
+
+
+
 def test_demo_mode_disabled_returns_404(client):
     """When DEMO_MODE is False, all /api/v1/demo endpoints return HTTP 404 Not Found."""
     original_setting = settings.DEMO_MODE
@@ -437,4 +481,188 @@ def test_demo_mode_disabled_returns_404(client):
         assert res_forecast.status_code == 404
     finally:
         settings.DEMO_MODE = original_setting
+
+
+def test_foods_crud_lifecycle(client):
+    """Test full CRUD lifecycle for institutional foods catalog."""
+    # 1. Create a new food
+    payload = {
+        "name": "Masala Dosa",
+        "category": "breakfast",
+        "veg": True,
+        "unit": "1 piece (180g)",
+        "kcal_per_unit": 220.0,
+        "protein_g": 4.5,
+        "carbs_g": 38.0,
+        "fat_g": 6.5,
+        "cost_inr_per_unit": 18.0,
+        "co2e_g_per_unit": 90.0,
+        "serving_weight_kg": 0.18,
+        "popularity": 0.92,
+        "max_per_plate": 2,
+        "model_id": "bread",
+        "icon_id": "dosa",
+        "note": "Crisp fermented rice crepe with spiced potato filling (estimate, edit me)",
+    }
+    create_res = client.post("/api/v1/demo/foods", json=payload)
+    assert create_res.status_code == 201
+    created = create_res.json()["food"]
+    food_id = created["id"]
+    assert "masala-dosa" in food_id
+    assert created["kcal_per_unit"] == 220.0
+    assert created["verified"] is False
+
+    # 2. Verify in catalog
+    catalog_res = client.get("/api/v1/demo/foods")
+    ids = [f["id"] for f in catalog_res.json()["foods"]]
+    assert food_id in ids
+
+    # 3. Update the food (verified calorie count)
+    update_res = client.put(f"/api/v1/demo/foods/{food_id}", json={
+        "name": "Masala Dosa (Verified)",
+        "kcal_per_unit": 235.0,
+        "verified": True,
+        "note": "Verified from institutional kitchen test batch",
+    })
+    assert update_res.status_code == 200
+    updated = update_res.json()["food"]
+    assert updated["name"] == "Masala Dosa (Verified)"
+    assert updated["kcal_per_unit"] == 235.0
+    assert updated["verified"] is True
+
+    # 4. Delete the food
+    del_res = client.delete(f"/api/v1/demo/foods/{food_id}")
+    assert del_res.status_code == 200
+    assert del_res.json()["status"] == "success"
+
+    # Verify deleted
+    catalog_after = client.get("/api/v1/demo/foods")
+    ids_after = [f["id"] for f in catalog_after.json()["foods"]]
+    assert food_id not in ids_after
+
+
+def test_weekly_menu_management(client):
+    """Test retrieving, editing 7x3 cyclical menu cells, and AI optimization."""
+    # 1. Fetch weekly menu
+    res = client.get("/api/v1/demo/menus?mess_id=mess-boys-a")
+    assert res.status_code == 200
+    data = res.json()
+    assert len(data["menus"]) == 21  # 7 days * 3 meals
+
+    # 2. Update a cell (Monday lunch)
+    cell_payload = {
+        "mess_id": "mess-boys-a",
+        "day_of_week": 0,
+        "meal": "Lunch",
+        "dish_ids": ["roti", "jeera-rice", "paneer-butter-masala", "dal-tadka", "curd"],
+    }
+    cell_res = client.post("/api/v1/demo/menus/cell", json=cell_payload)
+    assert cell_res.status_code == 200
+    updated_cell = cell_res.json()["menu"]
+    assert updated_cell["dish_ids"] == cell_payload["dish_ids"]
+    assert updated_cell["predicted_waste_kg"] > 0
+    assert updated_cell["predicted_cost_inr"] > 0
+
+    # 3. AI Menu Optimizer
+    opt_res = client.post("/api/v1/demo/menus/optimize", json={"mess_id": "mess-boys-a"})
+    assert opt_res.status_code == 200
+    opt_data = opt_res.json()
+    assert opt_data["status"] == "success"
+    assert opt_data["suggestions_applied"] > 0
+    assert opt_data["total_projected_waste_cut_kg"] > 0
+
+
+def test_meal_logs_crud(client):
+    """Test creating, editing, and deleting service logs."""
+    # Create log
+    log_payload = {
+        "mess_id": "mess-boys-a",
+        "date": "2026-11-03",
+        "meal": "Lunch",
+        "dish_id": "dal-tadka",
+        "prepared_kg": 50.0,
+        "consumed_kg": 46.0,
+        "leftover_kg": 4.0,
+        "turnout": 710,
+    }
+    create_res = client.post("/api/v1/demo/log", json=log_payload)
+    assert create_res.status_code == 200
+    log = create_res.json()["log"]
+    log_id = log["id"]
+
+    # Update log
+    update_res = client.put(f"/api/v1/demo/logs/{log_id}", json={
+        "prepared_kg": 52.0,
+        "consumed_kg": 48.0,
+        "leftover_kg": 4.0,
+        "turnout": 725,
+    })
+    assert update_res.status_code == 200
+    updated_log = update_res.json()["log"]
+    assert updated_log["prepared_kg"] == 52.0
+    assert updated_log["turnout"] == 725
+
+    # Delete log
+    del_res = client.delete(f"/api/v1/demo/logs/{log_id}")
+    assert del_res.status_code == 200
+    assert del_res.json()["status"] == "success"
+
+
+def test_mess_update_and_delete_protection(client):
+    """Test editing mess attributes and protection against deleting the final mess."""
+    # Create temporary mess
+    res_create = client.post("/api/v1/demo/messes", json={
+        "name": "Temporary Wing Mess",
+        "capacity": 400,
+        "type": "hostel_mess",
+        "location": "North Wing",
+        "breakfast_time": "07:00 - 09:00",
+        "lunch_time": "12:00 - 14:00",
+        "dinner_time": "19:00 - 21:00",
+    })
+    assert res_create.status_code == 201
+    mess = res_create.json()["mess"]
+    mess_id = mess["id"]
+
+    # Update mess
+    res_update = client.put(f"/api/v1/demo/messes/{mess_id}", json={
+        "name": "Renovated Wing Mess",
+        "capacity": 450,
+        "location": "North Wing - Level 1",
+    })
+    assert res_update.status_code == 200
+    assert res_update.json()["mess"]["name"] == "Renovated Wing Mess"
+    assert res_update.json()["mess"]["capacity"] == 450
+
+    # Delete mess
+    res_del = client.delete(f"/api/v1/demo/messes/{mess_id}")
+    assert res_del.status_code == 200
+    assert res_del.json()["status"] == "success"
+
+
+def test_feedback_loop_from_logs_to_forecast(client):
+    """Verify that kitchen meal logs adapt the forecast and introduce driver chips."""
+    # Record multiple logs with turnout shifted higher than average
+    for i in range(5):
+        client.post("/api/v1/demo/log", json={
+            "mess_id": "mess-boys-a",
+            "date": f"2026-11-0{i+1}",
+            "meal": "Lunch",
+            "dish_id": "roti",
+            "prepared_kg": 60.0,
+            "consumed_kg": 58.0,
+            "leftover_kg": 2.0,
+            "turnout": 840,  # Elevated attendance
+        })
+
+    # Request plan
+    plan_res = client.get("/api/v1/demo/plan?mess_id=mess-boys-a&meal=Lunch")
+    assert plan_res.status_code == 200
+    plan_data = plan_res.json()
+    drivers = plan_data["drivers"]
+
+    # Recent Meal Logs Feedback driver chip should be generated
+    log_driver = next((d for d in drivers if "Recent Meal Logs" in d["name"]), None)
+    assert log_driver is not None, "Recent Meal Logs Feedback driver must be present"
+    assert log_driver["direction"] == "positive"
 

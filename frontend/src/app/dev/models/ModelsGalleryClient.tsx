@@ -12,6 +12,7 @@ import {
   ModelCategory,
 } from "@/lib/assets/modelRegistry";
 import FoodModel from "@/components/FoodModel";
+import { formatNumber } from "@/lib/formatters";
 import {
   Search,
   Box,
@@ -160,7 +161,7 @@ function ModelCard({
             {model.category}
           </span>
           <span className="px-2 py-0.5 rounded-md text-[11px] font-mono bg-black/60 backdrop-blur-md text-[#EDE6D6]/80 border border-cream-200/10">
-            {model.triangles.toLocaleString()} Δ
+            {formatNumber(model.triangles)} Δ
           </span>
         </div>
 
@@ -308,7 +309,7 @@ function ModelInspectorModal({
                 {model.category}
               </span>
               <span className="px-2 py-0.5 rounded-md text-xs font-mono bg-forest-950/80 text-[#EDE6D6]/70 border border-cream-200/10">
-                {model.triangles.toLocaleString()} Triangles
+                {formatNumber(model.triangles)} Triangles
               </span>
             </div>
 
@@ -347,7 +348,7 @@ function ModelInspectorModal({
             <div className="mb-6">
               <div className="flex justify-between text-xs text-[#EDE6D6]/70 mb-2">
                 <span>Bounding Box Target Size</span>
-                <span className="font-mono text-amber-300">{targetSize.toFixed(1)} units</span>
+                <span className="font-mono text-amber-300">{formatNumber(targetSize, 1)} units</span>
               </div>
               <input
                 type="range"
@@ -425,7 +426,7 @@ export default function ModelsGalleryClient() {
   }, [search, selectedCategory]);
 
   const totalSizeKB = useMemo(() => {
-    return MODEL_REGISTRY.reduce((acc, m) => acc + m.sizeKB, 0).toFixed(1);
+    return formatNumber(MODEL_REGISTRY.reduce((acc, m) => acc + m.sizeKB, 0), 1);
   }, []);
 
   return (

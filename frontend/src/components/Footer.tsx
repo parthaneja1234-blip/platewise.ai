@@ -55,8 +55,9 @@ export default function Footer() {
 
       <div className="max-w-7xl mx-auto pt-10 mt-12 border-t border-cream-200/10 flex flex-col sm:flex-row items-center justify-between text-xs text-[#EDE6D6]/50 gap-4">
         <div>
-          © {new Date().getFullYear()} PlateWise AI. All rights reserved.
+          © 2026 PlateWise AI. All rights reserved.
         </div>
+
         <div className="flex items-center gap-6">
           <a href="#credits" className="hover:text-amber-400 transition-colors">
             3D Credits (CC0)

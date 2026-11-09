@@ -5,8 +5,9 @@ import Sidebar from "./Sidebar";
 import TopBar from "./TopBar";
 import MobileNav from "./MobileNav";
 import CommandPalette from "./CommandPalette";
+import AddMessModal from "./AddMessModal";
 import DemoDirector from "@/components/DemoDirector";
-import { ToastProvider } from "@/components/Toast";
+import SplashOvenBoot from "@/components/3d/SplashOvenBoot";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -25,39 +26,44 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <ToastProvider>
-      <div className="min-h-screen flex bg-[#FAF8F2] text-[#14211A]">
-        {/* 1. Left Collapsible Desktop Sidebar */}
-        <Sidebar
-          collapsed={sidebarCollapsed}
-          onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
-        />
+    <div className="min-h-screen flex bg-[#FAF8F2] text-[#14211A]">
+      {/* 0. First Session Load 3D Oven Boot Scene */}
+      <SplashOvenBoot />
 
-        {/* 2. Main Application Area */}
-        <div className="flex-1 flex flex-col min-w-0 pb-20 md:pb-8">
-          {/* Top Navigation Bar */}
-          <TopBar onOpenCommandPalette={() => setCommandPaletteOpen(true)} />
+      {/* 1. Left Collapsible Desktop Sidebar */}
+      <Sidebar
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
+      />
 
-          {/* Dynamic Route Page Content */}
-          <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
-            {children}
-          </main>
-        </div>
+      {/* 2. Main Application Area */}
+      <div className="flex-1 flex flex-col min-w-0 pb-20 md:pb-8">
+        {/* Top Navigation Bar */}
+        <TopBar onOpenCommandPalette={() => setCommandPaletteOpen(true)} />
 
-        {/* 3. Mobile Bottom Navigation */}
-        <MobileNav />
-
-        {/* 4. Global Cmd+K Command Palette Modal */}
-        <CommandPalette
-          isOpen={commandPaletteOpen}
-          onClose={() => setCommandPaletteOpen(false)}
-        />
-
-        {/* 5. Demo Director Floating Panel */}
-        <DemoDirector />
+        {/* Dynamic Route Page Content */}
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
+          {children}
+        </main>
       </div>
-    </ToastProvider>
+
+      {/* 3. Mobile Bottom Navigation */}
+      <MobileNav />
+
+      {/* 4. Global Cmd+K Command Palette Modal */}
+      <CommandPalette
+        isOpen={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+      />
+
+      {/* 5. Add Mess Hall Modal Dialog */}
+      <AddMessModal />
+
+      {/* 6. Demo Director Floating Panel */}
+      <DemoDirector />
+    </div>
   );
 }
+
 
 

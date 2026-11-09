@@ -14,6 +14,7 @@ import {
   Smartphone,
   Info,
   X,
+  PlayCircle,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -26,10 +27,13 @@ const primaryMobileItems = [
 
 const secondaryMobileItems = [
   { name: "Forecast Lab", href: "/forecast", icon: Sparkles, desc: "Simulate weather & attendance" },
+  { name: "Simulate Today", href: "/simulate", icon: PlayCircle, desc: "Rush hour split-view simulation" },
   { name: "Impact", href: "/impact", icon: Leaf, desc: "Cost & landfill diversion ledger" },
   { name: "Student App", href: "/student", icon: Smartphone, desc: "Student RSVP & live crowd meter" },
+  { name: "Plate Studio", href: "/plate-studio", icon: Sparkles, desc: "3D plate pre-order intelligence" },
   { name: "About PlateWise", href: "/welcome", icon: Info, desc: "3D kitchen demo & story" },
 ];
+
 
 export default function MobileNav() {
   const pathname = usePathname();

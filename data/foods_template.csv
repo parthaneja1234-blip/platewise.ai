@@ -1,0 +1,34 @@
+id,name,category,veg,unit_label,serving_weight_g,kcal_per_100g,kcal_per_serving,protein_g,carbs_g,fat_g,fiber_g,cost_inr_per_serving,source_type,source_note,measured_on,verified,model_id,icon_id,max_per_plate
+dal-tadka,Dal Tadka,curry,true,1 bowl,,,,,,,,,,,,,bowl-soup,dal,2
+jeera-rice,Jeera Rice,rice,true,1 bowl,,,,,,,,,,,,,bowl-cereal,rice,3
+roti,Tawa Roti,bread,true,1 piece,,,,,,,,,,,,,bread,roti,6
+paneer-butter-masala,Paneer Butter Masala,curry,true,1 bowl,,,,,,,,,,,,,pan-stew,paneer,2
+curd,Fresh Dahi / Curd,dairy,true,1 katori,,,,,,,,,,,,,pudding,curd,2
+salad,Kachumber Green Salad,salad,true,1 small plate,,,,,,,,,,,,,salad,salad,2
+gulab-jamun,Gulab Jamun,dessert,true,2 pieces,,,,,,,,,,,,,pudding,dessert,2
+rajma,Rajma Masala,curry,true,1 bowl,,,,,,,,,,,,,pot-stew,rajma,2
+aloo-gobi,Aloo Gobi,dry_veg,true,1 bowl,,,,,,,,,,,,,cauliflower,subji,2
+chole-bhature,Chole Bhature,special,true,2 bhature + chole,,,,,,,,,,,,,pot-stew,chole,2
+masala-dosa,Masala Dosa,breakfast,true,1 dosa,,,,,,,,,,,,,bread,dosa,2
+idli-sambar,Idli Sambar,breakfast,true,2 idlis + sambar,,,,,,,,,,,,,steamer,idli,3
+poha,Kanda Poha,breakfast,true,1 plate,,,,,,,,,,,,,bowl-cereal,poha,2
+upma,Rava Upma,breakfast,true,1 plate,,,,,,,,,,,,,bowl-cereal,upma,2
+veg-biryani,Vegetable Dum Biryani,rice,true,1 bowl,,,,,,,,,,,,,bowl-broth,biryani,2
+kadhi-pakora,Kadhi Pakora,curry,true,1 bowl,,,,,,,,,,,,,bowl-soup,kadhi,2
+mixed-veg,Mixed Vegetable Curry,curry,true,1 bowl,,,,,,,,,,,,,bowl-soup,subji,2
+plain-rice,Steamed White Rice,rice,true,1 bowl,,,,,,,,,,,,,bowl-cereal,rice,3
+butter-naan,Butter Naan,bread,true,1 piece,,,,,,,,,,,,,bread,naan,3
+egg-curry,Dhaba Egg Curry,curry,false,2 eggs + gravy,,,,,,,,,,,,,egg-cooked,curry,2
+banana,Fresh Banana,fruit,true,1 piece,,,,,,,,,,,,,banana,fruit,2
+apple,Fresh Apple,fruit,true,1 piece,,,,,,,,,,,,,apple,fruit,2
+tea,Masala Chai,beverage,true,1 cup,,,,,,,,,,,,,mug,tea,2
+sweet,Besan Ladoo,dessert,true,1 piece,,,,,,,,,,,,,pudding,dessert,2
+samosa,Punjabi Samosa,snack,true,1 piece,,,,,,,,,,,,,pie,snack,2
+pakora,Mix Veg Pakora,snack,true,1 plate,,,,,,,,,,,,,mincemeat-pie,snack,2
+sandwich,Club Sandwich,snack,true,1 piece,,,,,,,,,,,,,sandwich,sandwich,2
+fried-rice,Veg Fried Rice,rice,true,1 bowl,,,,,,,,,,,,,bowl-cereal,rice,2
+noodles,Hakka Noodles,snack,true,1 bowl,,,,,,,,,,,,,bowl-broth,noodles,2
+pasta,Masala Penne Pasta,snack,true,1 bowl,,,,,,,,,,,,,bowl-soup,pasta,2
+paratha,Aloo Paratha,bread,true,1 piece,,,,,,,,,,,,,bread,paratha,3
+uttapam,Onion Uttapam,breakfast,true,1 piece,,,,,,,,,,,,,pancakes,dosa,2
+vada-pav,Mumbai Vada Pav,snack,true,1 piece,,,,,,,,,,,,,burger,snack,2

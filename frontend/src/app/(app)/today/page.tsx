@@ -1,7 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import PageHeader from "@/components/shell/PageHeader";
+import ErrorStateCard from "@/components/shell/ErrorStateCard";
+import CardErrorBoundary from "@/components/CardErrorBoundary";
 import FoodIcon from "@/components/FoodIcon";
 import AnimatedNumber from "@/components/AnimatedNumber";
 import { useToast } from "@/components/Toast";
@@ -26,12 +29,20 @@ import {
   Calendar,
 } from "lucide-react";
 import clsx from "clsx";
+import { formatINR, formatNumber, formatKg } from "@/lib/formatters";
+import { useAppContext } from "@/context/AppContext";
+import dynamic from "next/dynamic";
+
+const TodayCookTray = dynamic(() => import("@/components/3d/TodayCookTray"), {
+  ssr: false,
+});
 
 const MEALS = ["Breakfast", "Lunch", "Dinner"] as const;
 type MealType = (typeof MEALS)[number];
 
 export default function TodayPlanPage() {
   const { toast } = useToast();
+  const { activeMessId } = useAppContext();
 
   const [activeMeal, setActiveMeal] = useState<MealType>("Lunch");
   const [loading, setLoading] = useState(true);
@@ -50,7 +61,7 @@ export default function TodayPlanPage() {
       setLoading(true);
       setError(null);
       const data = await demoApi.getPlan({
-        mess_id: "mess-boys-a",
+        mess_id: activeMessId,
         meal,
       });
       setPlan(data);
@@ -65,7 +76,8 @@ export default function TodayPlanPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeMessId]);
+
 
   useEffect(() => {
     fetchPlan(activeMeal);
@@ -142,22 +154,11 @@ export default function TodayPlanPage() {
   // Error state
   if (error || !plan) {
     return (
-      <div className="p-8 my-8 rounded-3xl bg-rose-500/10 border border-rose-500/25 text-rose-950 flex flex-col items-center justify-center text-center max-w-lg mx-auto">
-        <AlertTriangle className="w-10 h-10 text-rose-600 mb-3" />
-        <h3 className="font-serif text-lg font-bold mb-1">
-          Unable to Load Cook Sheet
-        </h3>
-        <p className="text-xs text-rose-800/80 mb-5 leading-relaxed">
-          {error || "Communication failure with the kitchen schedule engine."}
-        </p>
-        <button
-          onClick={() => fetchPlan(activeMeal)}
-          className="px-4 py-2 rounded-xl bg-forest-900 text-[#FAF8F2] text-xs font-semibold hover:bg-forest-800 flex items-center gap-2 transition-all cursor-pointer focus-ring"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-          <span>Retry Loading</span>
-        </button>
-      </div>
+      <ErrorStateCard
+        title="Unable to Load Cook Sheet"
+        message={error || "Communication failure with the kitchen schedule engine."}
+        onRetry={() => fetchPlan(activeMeal)}
+      />
     );
   }
 
@@ -211,6 +212,36 @@ export default function TodayPlanPage() {
         }
       />
 
+      {/* 1b. Truth in Labelling & Verification Notice Banner */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-white border border-[#e3ded0] shadow-xs text-xs">
+        <div className="flex items-center gap-2">
+          <span className="text-[#728479] font-medium">Dataset Origin:</span>
+          <span
+            className={clsx(
+              "px-2.5 py-0.5 rounded-full font-mono font-semibold text-[11px] border",
+              plan.data_source === "college_imported"
+                ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                : "bg-amber-50 text-amber-800 border-amber-300"
+            )}
+          >
+            {plan.data_label ||
+              (plan.data_source === "college_imported"
+                ? "College data (imported)"
+                : "Demo data (synthetic)")}
+          </span>
+        </div>
+
+        {plan.unverified_items_count !== undefined && plan.unverified_items_count > 0 && (
+          <Link
+            href="/foods"
+            className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-amber-500/10 text-amber-800 border border-amber-500/25 font-medium hover:bg-amber-500/20 transition-colors text-xs"
+          >
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+            <span>Includes {plan.unverified_items_count} unverified items in this service menu</span>
+          </Link>
+        )}
+      </div>
+
       {/* 2. Meal Selector Tabs & Service Overview Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-white border border-[#e3ded0] shadow-xs">
         {/* Meal Tabs */}
@@ -257,19 +288,29 @@ export default function TodayPlanPage() {
         </div>
       </div>
 
-      {/* 3. Per-Dish Preparation Cards Grid */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="font-serif text-lg font-bold text-[#14211a]">
-            Station Dish Recommendations ({plan.dishes.length} Recipes)
-          </h2>
-          <span className="text-xs text-[#728479]">
-            Targeting 6% buffer against recipe stockouts
-          </span>
-        </div>
+      {/* 2.5. 3D Instanced Cook Tray & Baking Progress Animation */}
+      <CardErrorBoundary cardTitle="Live 3D Kitchen Tray" onRetry={() => { fetchPlan(activeMeal); }}>
+        <TodayCookTray
+          recommendedServings={(plan.dishes || []).reduce((acc, d) => acc + (d.recommended_servings || 0), 0)}
+          isApproved={approvedLocally}
+          activeMeal={activeMeal}
+        />
+      </CardErrorBoundary>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {plan.dishes.map((dish) => {
+      {/* 3. Per-Dish Preparation Cards Grid */}
+      <CardErrorBoundary cardTitle="Station Dish Recommendations" onRetry={() => { fetchPlan(activeMeal); }}>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="font-serif text-lg font-bold text-[#14211a]">
+              Station Dish Recommendations ({(plan.dishes || []).length} Recipes)
+            </h2>
+            <span className="text-xs text-[#728479]">
+              Targeting 6% buffer against recipe stockouts
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {(plan.dishes || []).map((dish) => {
             const vsDiff = dish.vs_last_week_servings ?? 0;
             const vsPct = dish.vs_last_week_pct ?? 0;
             const isIncrease = vsDiff > 0;
@@ -294,12 +335,12 @@ export default function TodayPlanPage() {
                           {dish.name}
                         </h3>
                         <span className="text-[10px] text-[#728479] capitalize font-medium">
-                          {dish.category} • {(dish.portion_kg * 1000).toFixed(0)}g / portion
+                          {dish.category} • {formatNumber((dish.portion_kg ?? 0) * 1000, 0)}g / portion
                         </span>
                       </div>
                     </div>
                     <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-forest-950/5 text-[#4a5a50] border border-[#e3ded0]">
-                      ₹{dish.cost_per_kg_inr}/kg
+                      {formatINR(dish.cost_per_kg_inr)}/kg
                     </span>
                   </div>
 
@@ -310,8 +351,7 @@ export default function TodayPlanPage() {
                         Target Prep
                       </div>
                       <div className="font-serif text-xl font-bold text-[#14211a]">
-                        {dish.recommended_kg}{" "}
-                        <span className="text-xs font-normal text-[#728479]">kg</span>
+                        {formatKg(dish.recommended_kg, 1)}
                       </div>
                     </div>
                     <div>
@@ -319,7 +359,7 @@ export default function TodayPlanPage() {
                         Portions
                       </div>
                       <div className="font-serif text-xl font-bold text-[#14211a]">
-                        {dish.recommended_servings.toLocaleString()}
+                        {formatNumber(dish.recommended_servings)}
                       </div>
                     </div>
                   </div>
@@ -383,81 +423,87 @@ export default function TodayPlanPage() {
           })}
         </div>
       </div>
+    </CardErrorBoundary>
 
       {/* 4. Turnout Drivers Waterfall + Gauge Card */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Waterfall Chart */}
-        <div className="lg:col-span-2 p-6 rounded-2xl bg-white border border-[#e3ded0] shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="font-serif text-base font-bold text-[#14211a]">
-                Why This Headcount? — Turnout Driver Waterfall
-              </h3>
-              <p className="text-xs text-[#728479]">
-                Ridge model attribution showing how calendar, academic, and weather signals shift expected attendance.
-              </p>
-            </div>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-forest-950/5 text-[#4a5a50] border border-[#e3ded0]">
-              Explainable AI
-            </span>
-          </div>
-
-          <div className="space-y-3 pt-2">
-            {plan.turnout_drivers.map((driver, idx) => {
-              const isPos = driver.direction === "positive";
-              return (
-                <div
-                  key={idx}
-                  className="p-3 rounded-xl bg-forest-950/[0.02] border border-[#e3ded0] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
-                >
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-[#14211a]">
-                        {driver.name}
-                      </span>
-                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-forest-950/5 text-[#728479] uppercase">
-                        {driver.category}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-[#728479]">
-                      {driver.description}
-                    </p>
-                  </div>
-
-                  {/* Impact badge with bar */}
-                  <div className="flex items-center gap-3 shrink-0">
-                    <div className="w-24 h-2 bg-[#e3ded0] rounded-full overflow-hidden flex">
-                      {isPos ? (
-                        <div
-                          className="h-full bg-emerald-600 rounded-full"
-                          style={{ width: `${Math.min(100, Math.abs(driver.impact_pct) * 5)}%` }}
-                        />
-                      ) : (
-                        <div
-                          className="h-full bg-[#c8553d] rounded-full"
-                          style={{ width: `${Math.min(100, Math.abs(driver.impact_pct) * 5)}%` }}
-                        />
-                      )}
-                    </div>
-                    <span
-                      className={clsx(
-                        "font-mono font-bold w-14 text-right",
-                        isPos ? "text-emerald-700" : "text-[#c8553d]"
-                      )}
-                    >
-                      {isPos ? "+" : ""}
-                      {driver.impact_pct}%
-                    </span>
-                  </div>
+        <div className="lg:col-span-2">
+          <CardErrorBoundary cardTitle="Turnout Driver Waterfall" onRetry={() => { fetchPlan(activeMeal); }}>
+            <div className="p-6 rounded-2xl bg-white border border-[#e3ded0] shadow-xs space-y-4 h-full">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-serif text-base font-bold text-[#14211a]">
+                    Why This Headcount? — Turnout Driver Waterfall
+                  </h3>
+                  <p className="text-xs text-[#728479]">
+                    Ridge model attribution showing how calendar, academic, and weather signals shift expected attendance.
+                  </p>
                 </div>
-              );
-            })}
-          </div>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-forest-950/5 text-[#4a5a50] border border-[#e3ded0]">
+                  Explainable AI
+                </span>
+              </div>
+
+              <div className="space-y-3 pt-2">
+                {(plan.turnout_drivers || []).map((driver, idx) => {
+                  const isPos = driver.direction === "positive";
+                  return (
+                    <div
+                      key={idx}
+                      className="p-3 rounded-xl bg-forest-950/[0.02] border border-[#e3ded0] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-[#14211a]">
+                            {driver.name}
+                          </span>
+                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-forest-950/5 text-[#728479] uppercase">
+                            {driver.category}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-[#728479]">
+                          {driver.description}
+                        </p>
+                      </div>
+
+                      {/* Impact badge with bar */}
+                      <div className="flex items-center gap-3 shrink-0">
+                        <div className="w-24 h-2 bg-[#e3ded0] rounded-full overflow-hidden flex">
+                          {isPos ? (
+                            <div
+                              className="h-full bg-emerald-600 rounded-full"
+                              style={{ width: `${Math.min(100, Math.abs(driver.impact_pct) * 5)}%` }}
+                            />
+                          ) : (
+                            <div
+                              className="h-full bg-[#c8553d] rounded-full"
+                              style={{ width: `${Math.min(100, Math.abs(driver.impact_pct) * 5)}%` }}
+                            />
+                          )}
+                        </div>
+                        <span
+                          className={clsx(
+                            "font-mono font-bold w-14 text-right",
+                            isPos ? "text-emerald-700" : "text-[#c8553d]"
+                          )}
+                        >
+                          {isPos ? "+" : ""}
+                          {driver.impact_pct}%
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </CardErrorBoundary>
         </div>
 
         {/* Turnout Distribution Gauge Card */}
-        <div className="p-6 rounded-2xl bg-white border border-[#e3ded0] shadow-xs flex flex-col justify-between space-y-4">
-          <div>
+        <CardErrorBoundary cardTitle="Turnout Confidence Gauge" onRetry={() => { fetchPlan(activeMeal); }}>
+          <div className="p-6 rounded-2xl bg-white border border-[#e3ded0] shadow-xs flex flex-col justify-between space-y-4 h-full">
+            <div>
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-serif text-base font-bold text-[#14211a]">
                 Turnout Confidence Gauge
@@ -510,122 +556,125 @@ export default function TodayPlanPage() {
             Headcount calibrated with 120-day historical attendance records.
           </div>
         </div>
-      </div>
+      </CardErrorBoundary>
+    </div>
 
       {/* 5. Surplus-Risk Meter with Food-Safety Countdown & Redistribution Partners */}
-      <div className="p-6 rounded-2xl bg-gradient-to-br from-white to-[#FAF8F2] border border-[#e3ded0] shadow-xs space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#e3ded0] pb-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <ShieldAlert className="w-5 h-5 text-amber-600" />
-              <h3 className="font-serif text-lg font-bold text-[#14211a]">
-                Surplus Rescue & Food-Safety Timer
-              </h3>
-              <span
-                className={clsx(
-                  "px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider",
-                  plan.surplus_risk.level === "Low"
-                    ? "bg-emerald-500/15 text-emerald-800 border border-emerald-500/30"
-                    : "bg-amber-500/15 text-amber-800 border border-amber-500/30"
-                )}
-              >
-                {plan.surplus_risk.level} Surplus Risk ({plan.surplus_risk.risk_score}/100)
+      <CardErrorBoundary cardTitle="Surplus Rescue & Food-Safety Timer" onRetry={() => { fetchPlan(activeMeal); }}>
+        <div className="p-6 rounded-2xl bg-gradient-to-br from-white to-[#FAF8F2] border border-[#e3ded0] shadow-xs space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#e3ded0] pb-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <ShieldAlert className="w-5 h-5 text-amber-600" />
+                <h3 className="font-serif text-lg font-bold text-[#14211a]">
+                  Surplus Rescue & Food-Safety Timer
+                </h3>
+                <span
+                  className={clsx(
+                    "px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider",
+                    (plan.surplus_risk?.level || "Low") === "Low"
+                      ? "bg-emerald-500/15 text-emerald-800 border border-emerald-500/30"
+                      : "bg-amber-500/15 text-amber-800 border border-amber-500/30"
+                  )}
+                >
+                  {plan.surplus_risk?.level || "Low"} Surplus Risk ({plan.surplus_risk?.risk_score ?? 18}/100)
+                </span>
+              </div>
+              <p className="text-xs text-[#728479]">
+                FSSAI compliance: hot-held food at 65°C must be consumed or safely chilled within 4 hours.
+              </p>
+            </div>
+
+            {/* Countdown Clock Display */}
+            <div className="flex items-center gap-3 p-2.5 rounded-xl bg-[#0e2412] text-amber-300 border border-amber-500/30 shadow-inner">
+              <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
+              <div>
+                <div className="text-[9px] uppercase tracking-wider text-[#8fa896]">
+                  Holding Window Remaining
+                </div>
+                <div className="font-mono text-base font-bold tabular-nums text-white">
+                  {formatCountdown(countdownSeconds)}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Safety Metrics Strip */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="p-3.5 rounded-xl bg-forest-950/5 border border-[#e3ded0] flex items-center gap-3">
+              <Flame className="w-5 h-5 text-amber-600 shrink-0" />
+              <div>
+                <div className="text-[10px] text-[#728479] uppercase">
+                  Holding Temperature
+                </div>
+                <div className="font-mono text-sm font-bold text-[#14211a]">
+                  {plan.surplus_risk?.hot_holding_temp_c ?? 68}°C (Active Steam Table)
+                </div>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-forest-950/5 border border-[#e3ded0] flex items-center gap-3">
+              <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
+              <div>
+                <div className="text-[10px] text-[#728479] uppercase">
+                  Max Safe Shelf Life
+                </div>
+                <div className="font-mono text-sm font-bold text-[#14211a]">
+                  {plan.surplus_risk?.shelf_life_hours ?? 3.5} Hours from service initiation
+                </div>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-forest-950/5 border border-[#e3ded0] flex items-center gap-3">
+              <Sparkles className="w-5 h-5 text-teal-600 shrink-0" />
+              <div>
+                <div className="text-[10px] text-[#728479] uppercase">
+                  Surplus Probability
+                </div>
+                <div className="font-mono text-sm font-bold text-[#3e9b66]">
+                  Under 8.5% with PlateWise
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Redistribution Partner Cards */}
+          <div className="space-y-3 pt-2">
+            <div className="flex items-center justify-between text-xs font-semibold text-[#14211a]">
+              <span>Verified Redistribution NGO Partners:</span>
+              <span className="text-[10px] text-[#728479] font-normal">
+                One-click volunteer notification on service completion
               </span>
             </div>
-            <p className="text-xs text-[#728479]">
-              FSSAI compliance: hot-held food at 65°C must be consumed or safely chilled within 4 hours.
-            </p>
-          </div>
 
-          {/* Countdown Clock Display */}
-          <div className="flex items-center gap-3 p-2.5 rounded-xl bg-[#0e2412] text-amber-300 border border-amber-500/30 shadow-inner">
-            <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
-            <div>
-              <div className="text-[9px] uppercase tracking-wider text-[#8fa896]">
-                Holding Window Remaining
-              </div>
-              <div className="font-mono text-base font-bold tabular-nums text-white">
-                {formatCountdown(countdownSeconds)}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Safety Metrics Strip */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="p-3.5 rounded-xl bg-forest-950/5 border border-[#e3ded0] flex items-center gap-3">
-            <Flame className="w-5 h-5 text-amber-600 shrink-0" />
-            <div>
-              <div className="text-[10px] text-[#728479] uppercase">
-                Holding Temperature
-              </div>
-              <div className="font-mono text-sm font-bold text-[#14211a]">
-                {plan.surplus_risk.hot_holding_temp_c}°C (Active Steam Table)
-              </div>
-            </div>
-          </div>
-
-          <div className="p-3.5 rounded-xl bg-forest-950/5 border border-[#e3ded0] flex items-center gap-3">
-            <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
-            <div>
-              <div className="text-[10px] text-[#728479] uppercase">
-                Max Safe Shelf Life
-              </div>
-              <div className="font-mono text-sm font-bold text-[#14211a]">
-                {plan.surplus_risk.shelf_life_hours} Hours from service initiation
-              </div>
-            </div>
-          </div>
-
-          <div className="p-3.5 rounded-xl bg-forest-950/5 border border-[#e3ded0] flex items-center gap-3">
-            <Sparkles className="w-5 h-5 text-teal-600 shrink-0" />
-            <div>
-              <div className="text-[10px] text-[#728479] uppercase">
-                Surplus Probability
-              </div>
-              <div className="font-mono text-sm font-bold text-[#3e9b66]">
-                Under 8.5% with PlateWise
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Redistribution Partner Cards */}
-        <div className="space-y-3 pt-2">
-          <div className="flex items-center justify-between text-xs font-semibold text-[#14211a]">
-            <span>Verified Redistribution NGO Partners:</span>
-            <span className="text-[10px] text-[#728479] font-normal">
-              One-click volunteer notification on service completion
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {plan.surplus_risk.redistribution_partners.map((partner, idx) => (
-              <div
-                key={idx}
-                className="p-4 rounded-xl bg-white border border-[#e3ded0] shadow-xs flex items-center justify-between gap-3 hover:border-amber-500/40 transition-all"
-              >
-                <div>
-                  <h4 className="font-serif text-sm font-bold text-[#14211a]">
-                    {partner.name}
-                  </h4>
-                  <div className="text-[11px] text-[#728479] font-mono mt-0.5">
-                    {partner.contact} • Pickup ETA ~{partner.eta_minutes} mins
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleNotifyVolunteer(partner.name)}
-                  className="px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-900 text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer focus-ring shrink-0"
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {(plan.surplus_risk?.redistribution_partners || []).map((partner, idx) => (
+                <div
+                  key={idx}
+                  className="p-4 rounded-xl bg-white border border-[#e3ded0] shadow-xs flex items-center justify-between gap-3 hover:border-amber-500/40 transition-all"
                 >
-                  <PhoneCall className="w-3.5 h-3.5 text-amber-700" />
-                  <span>Notify Volunteers</span>
-                </button>
-              </div>
-            ))}
+                  <div>
+                    <h4 className="font-serif text-sm font-bold text-[#14211a]">
+                      {partner.name}
+                    </h4>
+                    <div className="text-[11px] text-[#728479] font-mono mt-0.5">
+                      {partner.contact} • Pickup ETA ~{partner.eta_minutes} mins
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleNotifyVolunteer(partner.name)}
+                    className="px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-900 text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer focus-ring shrink-0"
+                  >
+                    <PhoneCall className="w-3.5 h-3.5 text-amber-700" />
+                    <span>Notify Volunteers</span>
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
+      </CardErrorBoundary>
     </div>
   );
 }

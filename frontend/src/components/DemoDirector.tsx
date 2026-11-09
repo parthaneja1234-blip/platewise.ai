@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import { demoApi } from "@/lib/api";
+import { useAppContext } from "@/context/AppContext";
+
 
 const TOUR_STEPS = [
   {
@@ -32,7 +34,7 @@ const TOUR_STEPS = [
     step: 2,
     title: "2. The Six Inputs",
     subtitle: "Turnout, past logs, menu popularity, calendar, rain, events",
-    route: "/dashboard",
+    route: "/forecast",
     description:
       "PlateWise takes six operational signals: past consumption history, day of week, weather precipitation, academic exam schedules, and student RSVPs.",
   },
@@ -46,12 +48,13 @@ const TOUR_STEPS = [
   },
   {
     step: 4,
-    title: "4. Kitchen Prep Output",
-    subtitle: "Staged batch sheets, per-dish recommendations & drivers",
-    route: "/today",
+    title: "4. Rush Hour Simulation",
+    subtitle: "100/75/25 guesswork waste vs PlateWise calibrated prep",
+    route: "/simulate",
     description:
-      "Every chef gets exact recipe quantities, portion kg, vs last week variance, and a surplus rescue countdown timer.",
+      "Split view simulating arrival rushes 12:00-14:00. Watch plates deplete and see 18 kg of food waste saved in a single shift.",
   },
+
   {
     step: 5,
     title: "5. Real Climate Impact",
@@ -98,10 +101,13 @@ export default function DemoDirector() {
     }
   }, [presenterMode]);
 
+  const { refreshMesses, graphicsQuality, setGraphicsQuality } = useAppContext();
+
   const handleResetDemo = async () => {
     try {
       setIsResetting(true);
       await demoApi.postReset();
+      await refreshMesses();
       setResetSuccess(true);
       setTimeout(() => setResetSuccess(false), 2500);
       // Trigger a page reload or router refresh so all screens fetch clean seeded state
@@ -112,6 +118,7 @@ export default function DemoDirector() {
       setIsResetting(false);
     }
   };
+
 
   const handleStartTour = () => {
     setTourIndex(0);
@@ -339,7 +346,37 @@ export default function DemoDirector() {
             </div>
           </div>
 
-          {/* 4. Presenter Mode Toggle */}
+          {/* 4. Graphics Quality Setting (Stored in Cookie) */}
+          <div className="pt-2 border-t border-amber-500/20 space-y-1.5">
+            <div className="flex items-center justify-between text-xs font-medium text-[#faf8f2]">
+              <span className="flex items-center gap-1.5">
+                <Sliders className="w-3.5 h-3.5 text-amber-400" />
+                <span>3D Graphics</span>
+              </span>
+              <span className="text-[10px] font-mono text-amber-300 uppercase">
+                {graphicsQuality}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-1 p-0.5 rounded-lg bg-forest-950/80 border border-amber-500/20 text-[11px] font-semibold text-center">
+              {(["auto", "low", "off"] as const).map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => setGraphicsQuality(q)}
+                  className={clsx(
+                    "py-1 rounded cursor-pointer transition-all uppercase tracking-wider text-[10px]",
+                    graphicsQuality === q
+                      ? "bg-amber-500 text-forest-950 font-bold shadow-xs"
+                      : "text-[#8fa896] hover:text-[#faf8f2]"
+                  )}
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 5. Presenter Mode Toggle */}
           <div className="flex items-center justify-between pt-2 border-t border-amber-500/20">
             <div className="flex items-center gap-2">
               <Presentation className="w-4 h-4 text-amber-400" />

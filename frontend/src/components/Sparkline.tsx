@@ -19,10 +19,13 @@ export default function Sparkline({
   width = 80,
   className = "",
 }: SparklineProps) {
-  if (!data || data.length < 2) return null;
+  const validData = (data || []).filter(
+    (d): d is number => typeof d === "number" && !Number.isNaN(d) && Number.isFinite(d)
+  );
+  if (validData.length < 2) return null;
 
-  const min = Math.min(...data);
-  const max = Math.max(...data);
+  const min = Math.min(...validData);
+  const max = Math.max(...validData);
   const range = max - min === 0 ? 1 : max - min;
 
   const padX = 2;
@@ -30,8 +33,8 @@ export default function Sparkline({
   const innerH = height - padY * 2;
   const innerW = width - padX * 2;
 
-  const points = data.map((d, i) => {
-    const x = padX + (i / (data.length - 1)) * innerW;
+  const points = validData.map((d, i) => {
+    const x = padX + (i / (validData.length - 1)) * innerW;
     const y = padY + innerH - ((d - min) / range) * innerH;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   });

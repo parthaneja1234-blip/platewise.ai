@@ -189,10 +189,11 @@ def test_successful_login_resets_failed_counter_and_lock(client, db_session, exi
     assert existing_user.locked_until is None
 
 
-def test_login_ip_rate_limiting_triggers_429(client):
+def test_login_ip_rate_limiting_triggers_429(client, monkeypatch):
     """
-    Amendment 5: Exceeding 5 login requests from the same IP returns 429 Too Many Requests.
+    Amendment 5: Exceeding allowed login requests from the same IP returns 429 Too Many Requests.
     """
+    monkeypatch.setattr(settings, "RATE_LIMIT_LOGIN_PER_IP", 5)
     for i in range(5):
         resp = client.post(
             "/api/v1/auth/login",
@@ -216,6 +217,7 @@ def test_untrusted_x_forwarded_for_ignored_for_rate_limiting(client, monkeypatch
     """
     # TRUSTED_PROXIES is empty by default in tests (untrusted)
     monkeypatch.setattr(settings, "TRUSTED_PROXIES", [])
+    monkeypatch.setattr(settings, "RATE_LIMIT_LOGIN_PER_IP", 5)
 
     # Send 5 attempts with spoofed IP headers
     for i in range(5):

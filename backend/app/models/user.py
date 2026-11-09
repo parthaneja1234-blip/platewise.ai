@@ -8,6 +8,7 @@ from app.models.base import BaseModelMixin
 class UserRole(str, enum.Enum):
     ADMIN = "admin"
     MESS_MANAGER = "mess_manager"
+    STUDENT = "student"
     VIEWER = "viewer"
 
 

@@ -13,8 +13,10 @@ from app.routers.auth import router as auth_router
 
 try:
     from app.demo.router import router as demo_router
+    from app.routers.app_api import router as app_api_router
 except ImportError:
     from backend.app.demo.router import router as demo_router
+    from backend.app.routers.app_api import router as app_api_router
 
 
 def create_app(custom_settings: Optional[Settings] = None) -> FastAPI:
@@ -68,6 +70,27 @@ def create_app(custom_settings: Optional[Settings] = None) -> FastAPI:
     # Include API Routers
     application.include_router(auth_router)
     application.include_router(demo_router)
+    application.include_router(app_api_router)
+
+    @application.on_event("startup")
+    def startup_demo_persistence():
+        """
+        Idempotently creates demo_ tables at backend startup without touching Alembic migrations.
+        Seeds synthetic dataset if tables are empty.
+        """
+        if getattr(cfg, "DEMO_MODE", True):
+            try:
+                from app.database import Base, engine, SessionLocal
+                from app.demo import models  # noqa: F401 registers demo_ tables in metadata
+                from app.demo.seed import seed_demo_data_if_empty
+
+                Base.metadata.create_all(bind=engine)
+                with SessionLocal() as db:
+                    seed_demo_data_if_empty(db)
+            except Exception as e:
+                import logging
+                logging.getLogger("uvicorn.error").warning(f"Demo persistence startup initialization notice: {e}")
+
 
     @application.get("/health", tags=["Health"])
     @application.get("/api/health", tags=["Health"], include_in_schema=False)

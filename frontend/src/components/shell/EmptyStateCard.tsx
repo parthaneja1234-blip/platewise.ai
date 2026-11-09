@@ -39,9 +39,9 @@ export default function EmptyStateCard({
       {/* Ambient background accent */}
       <div className="absolute top-0 right-1/3 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
 
-      {/* Emblem Icon */}
-      <div className="w-16 h-16 rounded-2xl bg-[#faf6ee] border border-amber-500/25 flex items-center justify-center text-amber-600 mb-6 shadow-inner">
-        <Icon className="w-8 h-8 drop-shadow-sm" />
+      {/* Floating Emblem Sprite Icon */}
+      <div className="w-16 h-16 rounded-2xl bg-[#faf6ee] border border-amber-500/25 flex items-center justify-center text-amber-600 mb-6 shadow-inner animate-[bounce_3s_ease-in-out_infinite]">
+        <Icon className="w-8 h-8 drop-shadow-xs" />
       </div>
 
       {/* Title */}

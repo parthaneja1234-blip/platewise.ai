@@ -14,17 +14,23 @@ import {
   Info,
   ArrowRight,
   Command,
+  PlayCircle,
+  Plus,
 } from "lucide-react";
 import clsx from "clsx";
+import { useAppContext } from "@/context/AppContext";
+
 
 interface CommandItem {
   id: string;
   name: string;
   description: string;
   category: "Navigation" | "Actions";
-  href: string;
+  href?: string;
+  action?: () => void;
   icon: React.ComponentType<{ className?: string }>;
 }
+
 
 const commands: CommandItem[] = [
   {
@@ -52,8 +58,17 @@ const commands: CommandItem[] = [
     icon: Sparkles,
   },
   {
+    id: "simulate",
+    name: "Simulate Today",
+    description: "Split-view rush hour simulation: Guesswork vs PlateWise",
+    category: "Navigation",
+    href: "/simulate",
+    icon: PlayCircle,
+  },
+  {
     id: "log",
     name: "Log Meals",
+
     description: "Record preparation pull weight and actual leftover scale numbers",
     category: "Navigation",
     href: "/log",
@@ -85,7 +100,15 @@ const commands: CommandItem[] = [
   },
   {
     id: "about",
-    name: "About PlateWise",
+    name: "About & Credits",
+    description: "PlateWise mission, 3D model credits, and Kenney Food Kit attribution",
+    category: "Navigation",
+    href: "/about",
+    icon: Info,
+  },
+  {
+    id: "welcome",
+    name: "Interactive Landing Story",
     description: "Explore the 3D procedural bakery kitchen and institutional story",
     category: "Navigation",
     href: "/welcome",
@@ -103,9 +126,22 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
+  const { setIsAddMessOpen } = useAppContext();
+
+  const allCommands: CommandItem[] = [
+    ...commands,
+    {
+      id: "action-add-mess",
+      name: "Add Dining Hall / Mess",
+      description: "Register a new mess hall entity with custom capacity and meal times",
+      category: "Actions",
+      icon: Plus,
+      action: () => setIsAddMessOpen(true),
+    },
+  ];
 
   // Filter commands by query
-  const filtered = commands.filter((cmd) => {
+  const filtered = allCommands.filter((cmd) => {
     const q = query.toLowerCase().trim();
     return (
       cmd.name.toLowerCase().includes(q) ||
@@ -128,6 +164,15 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
     }
   }, [isOpen]);
 
+  const executeItem = (item: CommandItem) => {
+    onClose();
+    if (item.action) {
+      item.action();
+    } else if (item.href) {
+      router.push(item.href);
+    }
+  };
+
   // Global keydown for Escape, ArrowUp, ArrowDown, Enter
   useEffect(() => {
     if (!isOpen) return;
@@ -145,9 +190,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
       } else if (e.key === "Enter") {
         e.preventDefault();
         if (filtered[selectedIndex]) {
-          const target = filtered[selectedIndex];
-          onClose();
-          router.push(target.href);
+          executeItem(filtered[selectedIndex]);
         }
       }
     };
@@ -155,6 +198,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, filtered, selectedIndex, onClose, router]);
+
 
   if (!isOpen) return null;
 
@@ -200,10 +244,8 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
               return (
                 <div
                   key={item.id}
-                  onClick={() => {
-                    onClose();
-                    router.push(item.href);
-                  }}
+                  onClick={() => executeItem(item)}
+
                   onMouseEnter={() => setSelectedIndex(idx)}
                   className={clsx(
                     "flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer text-sm transition-colors",
