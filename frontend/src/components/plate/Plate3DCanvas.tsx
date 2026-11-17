@@ -20,6 +20,7 @@ interface Plate3DCanvasProps {
   items: PlateItem[];
   variant?: "plate" | "thali";
   saveSuccessBurst?: boolean;
+  showOverlayBadges?: boolean;
 }
 
 function PlateGeometry({ variant = "plate" }: { variant?: "plate" | "thali" }) {
@@ -189,18 +190,19 @@ export default function Plate3DCanvas({
   items,
   variant = "plate",
   saveSuccessBurst = false,
+  showOverlayBadges = true,
 }: Plate3DCanvasProps) {
   const { graphicsQuality } = useAppContext();
 
   return (
-    <div className="w-full h-full min-h-[340px] relative select-none">
+    <div className="w-full h-full min-h-[220px] sm:min-h-[300px] relative select-none">
       {/* DOM Count Badge Overlay outside Canvas */}
-      {items.length > 0 && (
-        <div className="absolute top-3 left-3 right-3 flex flex-wrap gap-1.5 pointer-events-none z-10">
+      {showOverlayBadges && items.length > 0 && (
+        <div className="absolute top-2.5 left-2.5 right-2.5 flex flex-wrap gap-1 pointer-events-none z-10">
           {items.map((it) => (
             <div
               key={it.food_id}
-              className="px-2.5 py-0.5 rounded-full bg-forest-950/85 backdrop-blur-md border border-amber-500/30 text-[10px] font-mono text-amber-200 shadow-md flex items-center gap-1.5"
+              className="px-2 py-0.5 rounded-full bg-forest-950/85 backdrop-blur-md border border-amber-500/30 text-[10px] font-mono text-amber-200 shadow-md flex items-center gap-1"
             >
               <span className="font-medium text-[#FAF8F2]">{it.name}</span>
               <span className="font-bold text-emerald-400">×{it.count}</span>
@@ -211,7 +213,7 @@ export default function Plate3DCanvas({
 
       {graphicsQuality !== "off" ? (
         <Canvas
-          camera={{ position: [0, 3.8, 3.6], fov: 42 }}
+          camera={{ position: [0, 4.3, 4.1], fov: 42 }}
           shadows={graphicsQuality !== "low"}
           gl={{
             toneMapping: THREE.ACESFilmicToneMapping,
@@ -235,7 +237,7 @@ export default function Plate3DCanvas({
           />
           <pointLight position={[-4, 3, -3]} intensity={0.6} color="#fde68a" />
 
-          <Float speed={1.2} rotationIntensity={0.12} floatIntensity={0.18}>
+          <Float speed={1.2} rotationIntensity={0.10} floatIntensity={0.14} scale={0.78}>
             <PlateGeometry variant={variant} />
             <FoodArrangement items={items} />
           </Float>

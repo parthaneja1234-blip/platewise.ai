@@ -225,7 +225,7 @@ export default function StudentAppPage() {
   };
 
   return (
-    <div className="flex-1 flex flex-col justify-between pb-24 relative">
+    <div className="flex-1 flex flex-col justify-between pb-32 relative">
       {/* Toast Alert */}
       {toastMessage && (
         <div className="fixed top-4 left-4 right-4 max-w-[390px] mx-auto z-50 bg-[#16381E] text-[#FAF8F2] p-3.5 rounded-xl border border-[#3E7B4C] shadow-2xl flex items-center gap-2.5 text-xs font-semibold animate-in slide-in-from-top-3">
@@ -270,7 +270,7 @@ export default function StudentAppPage() {
       </header>
 
       {/* Main Tab Content */}
-      <main className="flex-1 p-4 space-y-4">
+      <main className="flex-1 px-3 py-3 space-y-3.5 w-full max-w-full">
         {/* ================================================================= */}
         {/* TAB 1: TODAY (Menu, Cutoff, RSVP) */}
         {/* ================================================================= */}
@@ -415,9 +415,7 @@ export default function StudentAppPage() {
             </div>
 
             {/* Embedded Plate Studio Component */}
-            <div className="bg-[#16381E] border border-[#2D5A38] rounded-2xl p-2 sm:p-3 shadow-xl">
-              <PlateStudio />
-            </div>
+            <PlateStudio isStudentView={true} />
           </div>
         )}
 
@@ -701,66 +699,68 @@ export default function StudentAppPage() {
       {/* =================================================================== */}
       {/* Fixed Bottom Navigation Bar (Phone-first, 44px min targets) */}
       {/* =================================================================== */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 max-w-[420px] mx-auto bg-[#0E2412]/95 backdrop-blur-xl border-t border-[#1B4D2E] px-2 py-1 flex items-center justify-around shadow-2xl pb-[calc(env(safe-area-inset-bottom)+4px)]">
-        {/* 1. Today Tab */}
-        <button
-          type="button"
-          onClick={() => setActiveTab("today")}
-          id="tab-today-btn"
-          className={`flex-1 min-h-[48px] py-1.5 flex flex-col items-center justify-center rounded-xl transition-all cursor-pointer ${
-            activeTab === "today"
-              ? "text-[#D4AF37] bg-[#16381E] border border-[#2D5A38]"
-              : "text-[#A3B899] hover:text-[#FAF8F2]"
-          }`}
-        >
-          <Utensils className="w-5 h-5 mb-0.5" />
-          <span className="text-[10px] font-bold">Today</span>
-        </button>
+      <nav className="fixed bottom-0 left-0 right-0 z-40 w-full max-w-[420px] mx-auto bg-[#0E2412]/95 backdrop-blur-xl border-t border-[#1B4D2E] px-3 pt-2 pb-[max(env(safe-area-inset-bottom),12px)] shadow-2xl">
+        <div className="grid grid-cols-4 gap-1.5 w-full">
+          {/* 1. Today Tab */}
+          <button
+            type="button"
+            onClick={() => setActiveTab("today")}
+            id="tab-today-btn"
+            className={`flex flex-col items-center justify-center py-1.5 px-1 rounded-xl transition-all cursor-pointer min-h-[50px] ${
+              activeTab === "today"
+                ? "text-[#D4AF37] bg-[#16381E] border border-[#2D5A38] shadow-sm font-bold scale-[1.02]"
+                : "text-[#A3B899] hover:text-[#FAF8F2] hover:bg-[#16381E]/40 font-medium"
+            }`}
+          >
+            <Utensils className={`w-5 h-5 mb-0.5 transition-transform ${activeTab === "today" ? "scale-110" : ""}`} />
+            <span className="text-[11px] leading-tight">Today</span>
+          </button>
 
-        {/* 2. Plate Tab */}
-        <button
-          type="button"
-          onClick={() => setActiveTab("plate")}
-          id="tab-plate-btn"
-          className={`flex-1 min-h-[48px] py-1.5 flex flex-col items-center justify-center rounded-xl transition-all cursor-pointer ${
-            activeTab === "plate"
-              ? "text-[#D4AF37] bg-[#16381E] border border-[#2D5A38]"
-              : "text-[#A3B899] hover:text-[#FAF8F2]"
-          }`}
-        >
-          <Sparkles className="w-5 h-5 mb-0.5" />
-          <span className="text-[10px] font-bold">Plate</span>
-        </button>
+          {/* 2. Plate Tab */}
+          <button
+            type="button"
+            onClick={() => setActiveTab("plate")}
+            id="tab-plate-btn"
+            className={`flex flex-col items-center justify-center py-1.5 px-1 rounded-xl transition-all cursor-pointer min-h-[50px] ${
+              activeTab === "plate"
+                ? "text-[#D4AF37] bg-[#16381E] border border-[#2D5A38] shadow-sm font-bold scale-[1.02]"
+                : "text-[#A3B899] hover:text-[#FAF8F2] hover:bg-[#16381E]/40 font-medium"
+            }`}
+          >
+            <Sparkles className={`w-5 h-5 mb-0.5 transition-transform ${activeTab === "plate" ? "scale-110" : ""}`} />
+            <span className="text-[11px] leading-tight">Plate</span>
+          </button>
 
-        {/* 3. Rate Tab */}
-        <button
-          type="button"
-          onClick={() => setActiveTab("rate")}
-          id="tab-rate-btn"
-          className={`flex-1 min-h-[48px] py-1.5 flex flex-col items-center justify-center rounded-xl transition-all cursor-pointer ${
-            activeTab === "rate"
-              ? "text-[#D4AF37] bg-[#16381E] border border-[#2D5A38]"
-              : "text-[#A3B899] hover:text-[#FAF8F2]"
-          }`}
-        >
-          <Star className="w-5 h-5 mb-0.5" />
-          <span className="text-[10px] font-bold">Rate</span>
-        </button>
+          {/* 3. Rate Tab */}
+          <button
+            type="button"
+            onClick={() => setActiveTab("rate")}
+            id="tab-rate-btn"
+            className={`flex flex-col items-center justify-center py-1.5 px-1 rounded-xl transition-all cursor-pointer min-h-[50px] ${
+              activeTab === "rate"
+                ? "text-[#D4AF37] bg-[#16381E] border border-[#2D5A38] shadow-sm font-bold scale-[1.02]"
+                : "text-[#A3B899] hover:text-[#FAF8F2] hover:bg-[#16381E]/40 font-medium"
+            }`}
+          >
+            <Star className={`w-5 h-5 mb-0.5 transition-transform ${activeTab === "rate" ? "scale-110" : ""}`} />
+            <span className="text-[11px] leading-tight">Rate</span>
+          </button>
 
-        {/* 4. Me Tab */}
-        <button
-          type="button"
-          onClick={() => setActiveTab("me")}
-          id="tab-me-btn"
-          className={`flex-1 min-h-[48px] py-1.5 flex flex-col items-center justify-center rounded-xl transition-all cursor-pointer ${
-            activeTab === "me"
-              ? "text-[#D4AF37] bg-[#16381E] border border-[#2D5A38]"
-              : "text-[#A3B899] hover:text-[#FAF8F2]"
-          }`}
-        >
-          <UserIcon className="w-5 h-5 mb-0.5" />
-          <span className="text-[10px] font-bold">Me</span>
-        </button>
+          {/* 4. Me Tab */}
+          <button
+            type="button"
+            onClick={() => setActiveTab("me")}
+            id="tab-me-btn"
+            className={`flex flex-col items-center justify-center py-1.5 px-1 rounded-xl transition-all cursor-pointer min-h-[50px] ${
+              activeTab === "me"
+                ? "text-[#D4AF37] bg-[#16381E] border border-[#2D5A38] shadow-sm font-bold scale-[1.02]"
+                : "text-[#A3B899] hover:text-[#FAF8F2] hover:bg-[#16381E]/40 font-medium"
+            }`}
+          >
+            <UserIcon className={`w-5 h-5 mb-0.5 transition-transform ${activeTab === "me" ? "scale-110" : ""}`} />
+            <span className="text-[11px] leading-tight">Me</span>
+          </button>
+        </div>
       </nav>
     </div>
   );
